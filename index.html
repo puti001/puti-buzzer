@@ -906,7 +906,7 @@
                 </select>
               </div>
 
-              <button class="btn btn-outline" onclick="toggleTimer()" id="timer-btn"><i class="fa-regular fa-clock"></i> 倒數 15s</button>
+              <button class="btn btn-primary" onclick="toggleTimer()" id="timer-btn" style="font-weight:900;"><i class="fa-solid fa-play"></i> 開始答題 (15s)</button>
             </div>
           </div>
 
@@ -1217,6 +1217,7 @@ D. 氫氣
     var countdownTimer = null;
     var studentCountdownTimer = null;
     var speedTimeLimit = parseInt(localStorage.getItem('puti_speed_timelimit') || '15', 10);
+    var isSpeedRoundStarted = false;
     var hasScoredThisQuestion = false;
     var currentStudentChoice = null;
 
@@ -1434,7 +1435,10 @@ D. 氫氣
       var secSelect = document.getElementById('timer-sec-select');
       if (secSelect) secSelect.value = speedTimeLimit.toString();
       var timerBtn = document.getElementById('timer-btn');
-      if (timerBtn) timerBtn.innerHTML = '<i class="fa-regular fa-clock"></i> 倒數 ' + speedTimeLimit + 's';
+      if (timerBtn) {
+        timerBtn.className = 'btn btn-primary';
+        timerBtn.innerHTML = '<i class="fa-solid fa-play"></i> 開始答題 (' + speedTimeLimit + 's)';
+      }
 
       generateQRCodes();
       renderQuestion();
@@ -1559,7 +1563,8 @@ D. 氫氣
         question: quizBank[currentQIndex],
         quizLength: quizBank.length,
         quizBank: quizBank,
-        buzzerLocked: buzzerLocked
+        buzzerLocked: buzzerLocked,
+        isSpeedRoundStarted: isSpeedRoundStarted
       });
     }
 
@@ -1587,7 +1592,8 @@ D. 氫氣
           question: quizBank[currentQIndex],
           quizLength: quizBank.length,
           quizBank: quizBank,
-          buzzerLocked: buzzerLocked
+          buzzerLocked: buzzerLocked,
+          isSpeedRoundStarted: isSpeedRoundStarted
         });
       }
       else if (data.type === 'HEARTBEAT') {
@@ -1803,14 +1809,14 @@ D. 氫氣
           var statusEl = document.getElementById('student-conn-status');
           statusEl.className = 'conn-status conn-online';
           statusEl.innerHTML = '<i class="fa-solid fa-circle-check"></i> 已加入課堂';
-          syncStudentMode(data.mode, data.question, data.qIndex, data.quizLength, data.buzzerLocked);
+          syncStudentMode(data.mode, data.question, data.qIndex, data.quizLength, data.buzzerLocked, data.isSpeedRoundStarted);
         }
       }
       else if (data.type === 'SYNC_STATE' || data.type === 'CHANGE_MODE') {
         var statusEl = document.getElementById('student-conn-status');
         statusEl.className = 'conn-status conn-online';
         statusEl.innerHTML = '<i class="fa-solid fa-circle-check"></i> 已加入課堂';
-        syncStudentMode(data.mode, data.question, data.qIndex, data.quizLength, data.buzzerLocked);
+        syncStudentMode(data.mode, data.question, data.qIndex, data.quizLength, data.buzzerLocked, data.isSpeedRoundStarted);
       }
       else if (data.type === 'RESET_GAME') {
         studentSelfQIndex = 0;
@@ -1828,7 +1834,7 @@ D. 氫氣
           statusEl.innerHTML = '<i class="fa-solid fa-circle-check"></i> 老師已重新開始測驗！';
         }
         soundEffects.celebrate();
-        syncStudentMode(data.mode, data.question, 0, data.quizLength || quizBank.length, data.buzzerLocked);
+        syncStudentMode(data.mode, data.question, 0, data.quizLength || quizBank.length, data.buzzerLocked, false);
       }
       else if (data.type === 'BUZZER_UNLOCK') {
         buzzStartTime = performance.now();
@@ -1901,11 +1907,30 @@ D. 氫氣
       else if (data.type === 'START_TIMER') {
         if (currentMode === 'speed') {
           buzzStartTime = performance.now();
+          currentStudentChoice = null;
+
+          // 解鎖所有選項按鈕
+          document.querySelectorAll('.student-opt-btn').forEach(function(b) {
+            b.disabled = false;
+            b.style.pointerEvents = 'auto';
+            b.style.opacity = '1';
+            b.style.outline = 'none';
+            b.classList.remove('selected');
+          });
+
+          var hint = document.getElementById('student-vote-hint');
+          if (hint) hint.innerHTML = '<span style="color:#2E7D32; font-weight:900;">⚡ 計時開始！越快選對得分越高！</span>';
+          try { navigator.vibrate && navigator.vibrate([60, 40, 60]); } catch(e){}
+
           var timerWrap = document.getElementById('student-timer-wrap');
           var timerBar = document.getElementById('student-timer-bar');
           var timerSec = document.getElementById('student-timer-sec');
           if (timerWrap) timerWrap.style.display = 'flex';
-          if (timerBar) timerBar.style.width = '100%';
+          if (timerBar) {
+            timerBar.style.transition = 'none';
+            timerBar.style.width = '100%';
+            setTimeout(function(){ timerBar.style.transition = 'width 1s linear'; }, 50);
+          }
 
           var sTotal = data.duration || 15;
           var sLeft = sTotal;
@@ -1950,34 +1975,69 @@ D. 氫氣
       }
     }
 
-    function syncStudentMode(mode, qData, qIdx, length, bLocked) {
+    function syncStudentMode(mode, qData, qIdx, length, bLocked, isSpeedStarted) {
       currentMode = mode;
       document.getElementById('student-choice-box').style.display = 'none';
       document.getElementById('student-buzzer-box').style.display = 'none';
       document.getElementById('student-self-box').style.display = 'none';
 
       currentStudentChoice = null;
-      var hint = document.getElementById('student-vote-hint');
-      if (hint) hint.textContent = (mode === 'speed') ? '⚡ 限時競速：越快選對得分越高！' : '點選後可隨時更換';
-
-      // 重新解鎖所有選項按鈕
-      document.querySelectorAll('.student-opt-btn').forEach(function(b) {
-        b.disabled = false;
-        b.style.pointerEvents = 'auto';
-        b.style.opacity = '1';
-        b.style.outline = 'none';
-        b.classList.remove('selected');
-      });
 
       var timerWrap = document.getElementById('student-timer-wrap');
+      var timerBar = document.getElementById('student-timer-bar');
+      var timerSec = document.getElementById('student-timer-sec');
+
       if (mode === 'speed') {
         if (timerWrap) timerWrap.style.display = 'flex';
+        if (studentCountdownTimer) {
+          clearInterval(studentCountdownTimer);
+          studentCountdownTimer = null;
+        }
+        if (timerBar) {
+          timerBar.style.transition = 'none';
+          timerBar.style.width = '100%';
+        }
+
+        if (!isSpeedStarted) {
+          // 老師尚未按開始答題：鎖定按鈕並提示
+          document.querySelectorAll('.student-opt-btn').forEach(function(b) {
+            b.disabled = true;
+            b.style.pointerEvents = 'none';
+            b.style.opacity = '0.5';
+            b.style.outline = 'none';
+            b.classList.remove('selected');
+          });
+          if (timerSec) timerSec.textContent = '等待開始';
+          var hint = document.getElementById('student-vote-hint');
+          if (hint) hint.innerHTML = '<span style="color:#D97706; font-weight:900;">⏳ 等待老師點擊【開始答題】... 先看大螢幕題目！</span>';
+        } else {
+          // 已經開始中
+          document.querySelectorAll('.student-opt-btn').forEach(function(b) {
+            b.disabled = false;
+            b.style.pointerEvents = 'auto';
+            b.style.opacity = '1';
+            b.style.outline = 'none';
+            b.classList.remove('selected');
+          });
+          var hint = document.getElementById('student-vote-hint');
+          if (hint) hint.textContent = '⚡ 限時競速：越快選對得分越高！';
+        }
       } else {
         if (timerWrap) timerWrap.style.display = 'none';
         if (studentCountdownTimer) {
           clearInterval(studentCountdownTimer);
           studentCountdownTimer = null;
         }
+        // normal 模式解鎖所有按鈕
+        document.querySelectorAll('.student-opt-btn').forEach(function(b) {
+          b.disabled = false;
+          b.style.pointerEvents = 'auto';
+          b.style.opacity = '1';
+          b.style.outline = 'none';
+          b.classList.remove('selected');
+        });
+        var hint = document.getElementById('student-vote-hint');
+        if (hint) hint.textContent = '點選後可隨時更換';
       }
 
       if (mode === 'normal' || mode === 'speed') {
@@ -2165,18 +2225,32 @@ D. 氫氣
       renderPagination();
       broadcastState();
 
-      // 若處於模式 3（限時競速挑戰），切換題目時自動開始倒數計時！
+      // 若處於模式 3（限時競速挑戰），切換題目時重置為「等待老師按開始」狀態
+      isSpeedRoundStarted = false;
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+      var barWrap = document.getElementById('countdown-bar-wrap');
+      var progressBar = document.getElementById('countdown-progress-bar');
+      var timerBtn = document.getElementById('timer-btn');
+
       if (currentMode === 'speed') {
-        startSpeedTimer();
-      } else {
-        if (countdownTimer) {
-          clearInterval(countdownTimer);
-          countdownTimer = null;
+        if (barWrap) barWrap.style.display = 'block';
+        if (progressBar) {
+          progressBar.style.transition = 'none';
+          progressBar.style.width = '100%';
         }
-        var barWrap = document.getElementById('countdown-bar-wrap');
+        if (timerBtn) {
+          timerBtn.className = 'btn btn-primary';
+          timerBtn.innerHTML = '<i class="fa-solid fa-play"></i> 開始答題 (' + speedTimeLimit + 's)';
+        }
+      } else {
         if (barWrap) barWrap.style.display = 'none';
-        var timerBtn = document.getElementById('timer-btn');
-        if (timerBtn) timerBtn.innerHTML = '<i class="fa-regular fa-clock"></i> 倒數 ' + speedTimeLimit + 's';
+        if (timerBtn) {
+          timerBtn.className = 'btn btn-outline';
+          timerBtn.innerHTML = '<i class="fa-regular fa-clock"></i> 倒數 ' + speedTimeLimit + 's';
+        }
       }
     }
 
@@ -2227,17 +2301,30 @@ D. 氫氣
       document.getElementById('buzzer-stage').style.display = isBuzzer ? 'flex' : 'none';
       document.getElementById('self-stage').style.display = isSelf ? 'flex' : 'none';
 
+      isSpeedRoundStarted = false;
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+      var barWrap = document.getElementById('countdown-bar-wrap');
+      var progressBar = document.getElementById('countdown-progress-bar');
+      var timerBtn = document.getElementById('timer-btn');
       if (mode === 'speed') {
-        startSpeedTimer();
-      } else {
-        if (countdownTimer) {
-          clearInterval(countdownTimer);
-          countdownTimer = null;
+        if (barWrap) barWrap.style.display = 'block';
+        if (progressBar) {
+          progressBar.style.transition = 'none';
+          progressBar.style.width = '100%';
         }
-        var barWrap = document.getElementById('countdown-bar-wrap');
+        if (timerBtn) {
+          timerBtn.className = 'btn btn-primary';
+          timerBtn.innerHTML = '<i class="fa-solid fa-play"></i> 開始答題 (' + speedTimeLimit + 's)';
+        }
+      } else {
         if (barWrap) barWrap.style.display = 'none';
-        var timerBtn = document.getElementById('timer-btn');
-        if (timerBtn) timerBtn.innerHTML = '<i class="fa-regular fa-clock"></i> 倒數 ' + speedTimeLimit + 's';
+        if (timerBtn) {
+          timerBtn.className = 'btn btn-outline';
+          timerBtn.innerHTML = '<i class="fa-regular fa-clock"></i> 倒數 ' + speedTimeLimit + 's';
+        }
       }
 
       if (isSelf) renderSelfProgressUI();
@@ -2249,7 +2336,8 @@ D. 氫氣
         question: quizBank[currentQIndex],
         quizLength: quizBank.length,
         quizBank: quizBank,
-        buzzerLocked: isBuzzer
+        buzzerLocked: isBuzzer,
+        isSpeedRoundStarted: isSpeedRoundStarted
       });
     }
 
@@ -2274,6 +2362,12 @@ D. 氫氣
         if (countdownTimer) {
           clearInterval(countdownTimer);
           countdownTimer = null;
+        }
+        isSpeedRoundStarted = false;
+        var timerBtn = document.getElementById('timer-btn');
+        if (timerBtn && currentMode === 'speed') {
+          timerBtn.className = 'btn btn-outline';
+          timerBtn.innerHTML = '<i class="fa-regular fa-clock"></i> 已揭曉';
         }
         broadcast({ type: 'TIMER_END' });
 
@@ -2484,10 +2578,20 @@ D. 氫氣
     function changeTimeLimit(sec) {
       speedTimeLimit = parseInt(sec, 10) || 15;
       localStorage.setItem('puti_speed_timelimit', speedTimeLimit);
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+      isSpeedRoundStarted = false;
       var timerBtn = document.getElementById('timer-btn');
-      if (timerBtn) timerBtn.innerHTML = '<i class="fa-regular fa-clock"></i> 倒數 ' + speedTimeLimit + 's';
-      if (currentMode === 'speed') {
-        startSpeedTimer();
+      if (timerBtn) {
+        timerBtn.className = 'btn btn-primary';
+        timerBtn.innerHTML = '<i class="fa-solid fa-play"></i> 開始答題 (' + speedTimeLimit + 's)';
+      }
+      var progressBar = document.getElementById('countdown-progress-bar');
+      if (progressBar) {
+        progressBar.style.transition = 'none';
+        progressBar.style.width = '100%';
       }
     }
 
@@ -2496,6 +2600,7 @@ D. 氫氣
         clearInterval(countdownTimer);
         countdownTimer = null;
       }
+      isSpeedRoundStarted = true;
 
       var barWrap = document.getElementById('countdown-bar-wrap');
       var progressBar = document.getElementById('countdown-progress-bar');
@@ -2508,7 +2613,11 @@ D. 氫氣
 
       var sec = speedTimeLimit;
       var totalSec = speedTimeLimit;
-      document.getElementById('timer-btn').innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 剩餘 ' + sec + 's';
+      var timerBtn = document.getElementById('timer-btn');
+      if (timerBtn) {
+        timerBtn.className = 'btn btn-outline';
+        timerBtn.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 剩餘 ' + sec + 's (暫停)';
+      }
       questionStartTime = performance.now();
 
       // 廣播給學生端開始倒數
@@ -2524,12 +2633,16 @@ D. 氫氣
           progressBar.style.width = pct + '%';
         }
         if (sec > 0) {
-          document.getElementById('timer-btn').innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 剩餘 ' + sec + 's';
+          if (timerBtn) timerBtn.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 剩餘 ' + sec + 's (暫停)';
           if (sec <= 3) soundEffects.countdown();
         } else {
           clearInterval(countdownTimer);
           countdownTimer = null;
-          document.getElementById('timer-btn').innerHTML = '<i class="fa-regular fa-clock"></i> 時間到！';
+          isSpeedRoundStarted = false;
+          if (timerBtn) {
+            timerBtn.className = 'btn btn-outline';
+            timerBtn.innerHTML = '<i class="fa-regular fa-clock"></i> 時間到！';
+          }
           soundEffects.wrong();
           broadcast({ type: 'TIMER_END' });
         }
@@ -2540,9 +2653,12 @@ D. 氫氣
       if (countdownTimer) {
         clearInterval(countdownTimer);
         countdownTimer = null;
-        var barWrap = document.getElementById('countdown-bar-wrap');
-        if (barWrap) barWrap.style.display = 'none';
-        document.getElementById('timer-btn').innerHTML = '<i class="fa-regular fa-clock"></i> 倒數 ' + speedTimeLimit + 's';
+        isSpeedRoundStarted = false;
+        var timerBtn = document.getElementById('timer-btn');
+        if (timerBtn) {
+          timerBtn.className = 'btn btn-primary';
+          timerBtn.innerHTML = '<i class="fa-solid fa-play"></i> 繼續答題 (' + speedTimeLimit + 's)';
+        }
         broadcast({ type: 'TIMER_END' });
         return;
       }
@@ -2711,6 +2827,10 @@ D. 氫氣
       if (e.code === 'Space') {
         e.preventDefault();
         if (currentMode === 'buzzer') startBuzzerRound();
+        else if (currentMode === 'speed') {
+          if (!isSpeedRoundStarted && !isRevealed) startSpeedTimer();
+          else toggleReveal();
+        }
         else toggleReveal();
       } else if (e.key === 'ArrowRight') {
         nextQuestion();
