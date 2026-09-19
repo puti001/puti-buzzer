@@ -990,7 +990,7 @@
     <!-- 學生端作答視圖 (Student Client) -->
     <div id="student-view">
       
-      <!-- 學生加入填寫姓名畫面 (首次進入) -->
+      <!-- 學生加入填寫姓名畫面 -->
       <div id="student-join-screen" class="student-login-card">
         <div class="brand-logo" style="margin: 0 auto;"><i class="fa-solid fa-hand"></i></div>
         <h2 style="font-size: 24px; font-weight: 900; color: var(--color-dark);">加入課堂搶答</h2>
@@ -1124,39 +1124,73 @@ D. 氫氣
 
   <script>
     /* ============================================================
+       0. 全域狀態變數 (頂層提升宣告，杜絕 TDZ 錯誤)
+       ============================================================ */
+    var buzzerLocked = false;
+    var buzzerRoundWinner = null;
+    var currentQIndex = 0;
+    var currentMode = 'normal';
+    var isRevealed = false;
+    var votes = { A: 0, B: 0, C: 0, D: 0 };
+    var students = {};
+    var mqttClient = null;
+    var myRoomId = '';
+    var myStudentId = '';
+    var myName = '';
+    var handshakeInterval = null;
+    var isJoinedConfirmed = false;
+    var buzzStartTime = 0;
+    var selfScore = 0;
+    var countdownTimer = null;
+
+    /* ============================================================
        1. 音效引擎 (Web Audio API 合成)
        ============================================================ */
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function playTone(freq, type = 'sine', duration = 0.15, gainVal = 0.2) {
-      if (audioCtx.state === 'suspended') audioCtx.resume();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = type;
-      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-      gain.gain.setValueAtTime(gainVal, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start();
-      osc.stop(audioCtx.currentTime + duration);
+    var audioCtx = null;
+    function getAudioCtx() {
+      if (!audioCtx && (window.AudioContext || window.webkitAudioContext)) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      return audioCtx;
     }
 
-    const soundEffects = {
-      buzz: () => {
+    function playTone(freq, type, duration, gainVal) {
+      type = type || 'sine';
+      duration = duration || 0.15;
+      gainVal = gainVal || 0.2;
+      try {
+        var ctx = getAudioCtx();
+        if (!ctx) return;
+        if (ctx.state === 'suspended') ctx.resume();
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        gain.gain.setValueAtTime(gainVal, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + duration);
+      } catch(e) {}
+    }
+
+    var soundEffects = {
+      buzz: function() {
         playTone(320, 'sawtooth', 0.25, 0.4);
-        setTimeout(() => playTone(480, 'square', 0.2, 0.3), 80);
+        setTimeout(function() { playTone(480, 'square', 0.2, 0.3); }, 80);
       },
-      countdown: () => playTone(600, 'sine', 0.08, 0.2),
-      correct: () => {
+      countdown: function() { playTone(600, 'sine', 0.08, 0.2); },
+      correct: function() {
         playTone(523.25, 'sine', 0.2, 0.3);
-        setTimeout(() => playTone(659.25, 'sine', 0.3, 0.3), 120);
-        setTimeout(() => playTone(783.99, 'sine', 0.4, 0.3), 240);
+        setTimeout(function() { playTone(659.25, 'sine', 0.3, 0.3); }, 120);
+        setTimeout(function() { playTone(783.99, 'sine', 0.4, 0.3); }, 240);
       },
-      wrong: () => {
+      wrong: function() {
         playTone(220, 'triangle', 0.3, 0.3);
-        setTimeout(() => playTone(180, 'triangle', 0.4, 0.3), 150);
+        setTimeout(function() { playTone(180, 'triangle', 0.4, 0.3); }, 150);
       },
-      celebrate: () => {
+      celebrate: function() {
         try { confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } }); } catch(e){}
         soundEffects.correct();
       }
@@ -1165,7 +1199,7 @@ D. 氫氣
     /* ============================================================
        2. 題庫資料
        ============================================================ */
-    const sampleBanks = {
+    var sampleBanks = {
       1: [
         {
           id: 'q1',
@@ -1221,50 +1255,46 @@ D. 氫氣
       ]
     };
 
-    let quizBank = JSON.parse(localStorage.getItem('puti_buzzer_quiz') || 'null') || sampleBanks[1];
-    let currentQIndex = 0;
-    let currentMode = 'normal';
-    let isRevealed = false;
-    let votes = { A: 0, B: 0, C: 0, D: 0 };
-    let students = {};
+    var quizBank = JSON.parse(localStorage.getItem('puti_buzzer_quiz') || 'null') || sampleBanks[1];
 
     function parsePastedText(raw) {
-      const questions = [];
-      const blocks = raw.split(/\n\s*(?=(?:[0-9]{1,3}[\.、\s]|第[0-9]+題))/g);
+      var questions = [];
+      var blocks = raw.split(/\n\s*(?=(?:[0-9]{1,3}[\.、\s]|第[0-9]+題))/g);
 
-      for (const block of blocks) {
+      for (var b = 0; b < blocks.length; b++) {
+        var block = blocks[b];
         if (!block.trim()) continue;
-        const lines = block.trim().split('\n').map(l => l.trim()).filter(Boolean);
+        var lines = block.trim().split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
         if (lines.length === 0) continue;
 
-        let questionText = lines[0].replace(/^(?:[0-9]{1,3}[\.、\s]|第[0-9]+題[:：]?)\s*/, '');
-        let options = [];
-        let answer = 'A';
-        let explanation = '';
+        var questionText = lines[0].replace(/^(?:[0-9]{1,3}[\.、\s]|第[0-9]+題[:：]?)\s*/, '');
+        var options = [];
+        var answer = 'A';
+        var explanation = '';
 
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i];
-          const ansMatch = line.match(/(?:答案|Ans|KEY)[:：\s]*([A-Da-d1-4])/i);
+        for (var i = 1; i < lines.length; i++) {
+          var line = lines[i];
+          var ansMatch = line.match(/(?:答案|Ans|KEY)[:：\s]*([A-Da-d1-4])/i);
           if (ansMatch) {
-            const val = ansMatch[1].toUpperCase();
+            var val = ansMatch[1].toUpperCase();
             answer = ({'1':'A','2':'B','3':'C','4':'D'})[val] || val;
             continue;
           }
-          const expMatch = line.match(/^(?:解析|說明|Note)[:：]\s*(.*)/i);
+          var expMatch = line.match(/^(?:解析|說明|Note)[:：]\s*(.*)/i);
           if (expMatch) {
             explanation = expMatch[1];
             continue;
           }
 
-          const optMatches = [...line.matchAll(/(?:\(([A-D1-4])\)|([A-D1-4])[\.、\s])\s*([^\(A-D1-4]+)/gi)];
+          var optMatches = Array.from(line.matchAll(/(?:\(([A-D1-4])\)|([A-D1-4])[\.、\s])\s*([^\(A-D1-4]+)/gi));
           if (optMatches.length > 0) {
-            optMatches.forEach(m => {
-              let k = (m[1] || m[2]).toUpperCase();
+            optMatches.forEach(function(m) {
+              var k = (m[1] || m[2]).toUpperCase();
               k = ({'1':'A','2':'B','3':'C','4':'D'})[k] || k;
               options.push({ key: k, text: m[3].trim() });
             });
           } else if (line.match(/^[A-D1-4][\.、\s]/)) {
-            let k = line[0].toUpperCase();
+            var k = line[0].toUpperCase();
             k = ({'1':'A','2':'B','3':'C','4':'D'})[k] || k;
             options.push({ key: k, text: line.substring(2).trim() });
           } else {
@@ -1276,9 +1306,9 @@ D. 氫氣
           questions.push({
             id: 'q_' + (questions.length + 1),
             question: questionText,
-            options,
-            answer,
-            explanation
+            options: options,
+            answer: answer,
+            explanation: explanation
           });
         }
       }
@@ -1286,21 +1316,19 @@ D. 氫氣
     }
 
     /* ============================================================
-       3. 萬無一失通訊核心：MQTT over WSS (雙向握手心跳)
+       3. 核心通訊 (MQTT over WSS)
        ============================================================ */
-    const urlParams = new URLSearchParams(window.location.search);
-    const roomParam = urlParams.get('room');
-    const isStudent = Boolean(roomParam);
+    var urlParams = new URLSearchParams(window.location.search);
+    var roomParam = urlParams.get('room');
+    var isStudent = Boolean(roomParam);
 
-    let mqttClient = null;
-    let myRoomId = (roomParam || '').toUpperCase();
-    let myStudentId = localStorage.getItem('puti_student_uuid') || ('stu_' + Math.random().toString(36).substr(2, 9));
+    myRoomId = (roomParam || '').toUpperCase();
+    myStudentId = localStorage.getItem('puti_student_uuid') || ('stu_' + Math.random().toString(36).substr(2, 9));
     localStorage.setItem('puti_student_uuid', myStudentId);
 
-    let myName = localStorage.getItem('puti_student_name') || '';
+    myName = localStorage.getItem('puti_student_name') || '';
 
-    // 公共 MQTT Broker
-    const MQTT_BROKER = 'wss://broker.emqx.io:8084/mqtt';
+    var MQTT_BROKER = 'wss://broker.emqx.io:8084/mqtt';
 
     if (!isStudent) {
       initTeacherHost();
@@ -1314,8 +1342,7 @@ D. 氫氣
       document.getElementById('host-header-actions').style.display = 'flex';
       document.getElementById('student-header-actions').style.display = 'none';
 
-      // 老師房號持久化，重整不會變更，保證 QR Code 永久有效
-      let savedPin = localStorage.getItem('puti_active_pin');
+      var savedPin = localStorage.getItem('puti_active_pin');
       if (!savedPin) {
         savedPin = Math.floor(1000 + Math.random() * 9000).toString();
         localStorage.setItem('puti_active_pin', savedPin);
@@ -1327,21 +1354,20 @@ D. 氫氣
 
       generateQRCodes();
       renderQuestion();
-
       connectTeacherMQTT();
     }
 
     function changeRoomPin() {
       if (confirm('確定要產生新房號嗎？產生後學生需要重新掃描新的 QR Code！')) {
-        const newPin = Math.floor(1000 + Math.random() * 9000).toString();
+        var newPin = Math.floor(1000 + Math.random() * 9000).toString();
         localStorage.setItem('puti_active_pin', newPin);
         location.reload();
       }
     }
 
     function connectTeacherMQTT() {
-      const hostTopic = `puti/quiz/${myRoomId}/to_host`;
-      const statusEl = document.getElementById('host-conn-status');
+      var hostTopic = 'puti/quiz/' + myRoomId + '/to_host';
+      var statusEl = document.getElementById('host-conn-status');
 
       mqttClient = mqtt.connect(MQTT_BROKER, {
         clientId: 'host_' + Math.random().toString(16).substr(2, 8),
@@ -1349,27 +1375,26 @@ D. 氫氣
         reconnectPeriod: 2000
       });
 
-      mqttClient.on('connect', () => {
+      mqttClient.on('connect', function() {
         statusEl.className = 'conn-status conn-online';
         statusEl.innerHTML = '<i class="fa-solid fa-circle-check"></i> 伺服器已就緒';
         mqttClient.subscribe(hostTopic);
-        // 廣播一次目前狀態給可能已連線的學生
         broadcastState();
       });
 
-      mqttClient.on('reconnect', () => {
+      mqttClient.on('reconnect', function() {
         statusEl.className = 'conn-status conn-connecting';
         statusEl.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> 重新連線中...';
       });
 
-      mqttClient.on('offline', () => {
+      mqttClient.on('offline', function() {
         statusEl.className = 'conn-status conn-offline';
         statusEl.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> 離線';
       });
 
-      mqttClient.on('message', (topic, message) => {
+      mqttClient.on('message', function(topic, message) {
         try {
-          const data = JSON.parse(message.toString());
+          var data = JSON.parse(message.toString());
           handleTeacherReceivedData(data);
         } catch(e) {
           console.error(e);
@@ -1378,7 +1403,7 @@ D. 氫氣
     }
 
     function generateQRCodes() {
-      const studentJoinUrl = window.location.origin + window.location.pathname + '?room=' + myRoomId;
+      var studentJoinUrl = window.location.origin + window.location.pathname + '?room=' + myRoomId;
       
       document.getElementById('qrcode-box').innerHTML = '';
       new QRCode(document.getElementById('qrcode-box'), {
@@ -1403,7 +1428,7 @@ D. 氫氣
 
     function broadcast(data) {
       if (mqttClient && mqttClient.connected) {
-        const studentTopic = `puti/quiz/${myRoomId}/to_students`;
+        var studentTopic = 'puti/quiz/' + myRoomId + '/to_students';
         mqttClient.publish(studentTopic, JSON.stringify(data));
       }
     }
@@ -1415,28 +1440,24 @@ D. 氫氣
         qIndex: currentQIndex,
         question: quizBank[currentQIndex],
         quizLength: quizBank.length,
-        buzzerLocked
+        buzzerLocked: buzzerLocked
       });
     }
 
-    let buzzerLocked = false;
-    let buzzerRoundWinner = null;
-
     function handleTeacherReceivedData(data) {
       if (data.type === 'JOIN' || data.type === 'HEARTBEAT') {
-        const isNew = !students[data.studentId];
+        var isNew = !students[data.studentId];
         students[data.studentId] = {
           id: data.studentId,
-          name: data.name || students[data.studentId]?.name || '同學',
-          score: students[data.studentId]?.score || 0,
-          currentQ: students[data.studentId]?.currentQ || 1,
-          choice: students[data.studentId]?.choice || null,
+          name: data.name || (students[data.studentId] ? students[data.studentId].name : '同學'),
+          score: (students[data.studentId] ? students[data.studentId].score : 0),
+          currentQ: (students[data.studentId] ? students[data.studentId].currentQ : 1),
+          choice: (students[data.studentId] ? students[data.studentId].choice : null),
           lastSeen: Date.now()
         };
         updateStudentListUI();
         if (isNew) soundEffects.countdown();
 
-        // 回應學生確認 (ACK)
         broadcast({
           type: 'ACK_JOIN',
           targetStudentId: data.studentId,
@@ -1444,7 +1465,7 @@ D. 氫氣
           qIndex: currentQIndex,
           question: quizBank[currentQIndex],
           quizLength: quizBank.length,
-          buzzerLocked
+          buzzerLocked: buzzerLocked
         });
       }
       else if (data.type === 'RENAME') {
@@ -1455,7 +1476,7 @@ D. 氫氣
       }
       else if (data.type === 'SUBMIT_CHOICE') {
         if (students[data.studentId]) {
-          const oldChoice = students[data.studentId].choice;
+          var oldChoice = students[data.studentId].choice;
           if (oldChoice) votes[oldChoice] = Math.max(0, votes[oldChoice] - 1);
           students[data.studentId].choice = data.choice;
           votes[data.choice] = (votes[data.choice] || 0) + 1;
@@ -1468,7 +1489,7 @@ D. 氫氣
           buzzerLocked = true;
           buzzerRoundWinner = {
             studentId: data.studentId,
-            name: data.name || students[data.studentId]?.name || '同學',
+            name: data.name || (students[data.studentId] ? students[data.studentId].name : '同學'),
             timeDiff: (data.timeDiff / 1000).toFixed(2)
           };
           soundEffects.buzz();
@@ -1486,13 +1507,8 @@ D. 氫氣
     }
 
     /* ============================================================
-       4. 學生端核心 (支援自由修改暱稱與握手重試)
+       4. 學生端核心
        ============================================================ */
-    let buzzStartTime = 0;
-    let selfScore = 0;
-    let handshakeInterval = null;
-    let isJoinedConfirmed = false;
-
     function initStudentClient() {
       document.getElementById('host-view').style.display = 'none';
       document.getElementById('student-view').style.display = 'flex';
@@ -1502,21 +1518,20 @@ D. 氫氣
       document.getElementById('student-room-display').textContent = myRoomId;
       document.getElementById('join-screen-pin').textContent = myRoomId;
 
-      // 檢查是否已有自訂暱稱
+      // 永遠顯示輸入暱稱與確認「進入課堂」畫面，讓學生確認名字
+      document.getElementById('student-join-screen').style.display = 'flex';
       if (myName) {
-        document.getElementById('student-join-screen').style.display = 'none';
+        document.getElementById('student-name-input').value = myName;
         document.getElementById('my-display-name').textContent = myName;
-        connectStudentMQTT();
       } else {
-        document.getElementById('student-join-screen').style.display = 'flex';
-        const randNum = Math.floor(1 + Math.random() * 35);
-        document.getElementById('student-name-input').value = `${randNum}號同學`;
+        var randNum = Math.floor(1 + Math.random() * 35);
+        document.getElementById('student-name-input').value = randNum + '號同學';
       }
     }
 
     function confirmStudentJoin() {
-      const input = document.getElementById('student-name-input');
-      const val = input.value.trim();
+      var input = document.getElementById('student-name-input');
+      var val = input.value.trim();
       myName = val || ('同學' + Math.floor(Math.random()*100));
       localStorage.setItem('puti_student_name', myName);
       document.getElementById('my-display-name').textContent = myName;
@@ -1532,16 +1547,15 @@ D. 氫氣
       document.getElementById('change-name-modal').style.display = 'none';
     }
     function saveNewName() {
-      const newName = document.getElementById('edit-name-input').value.trim();
+      var newName = document.getElementById('edit-name-input').value.trim();
       if (!newName) return;
       myName = newName;
       localStorage.setItem('puti_student_name', myName);
       document.getElementById('my-display-name').textContent = myName;
       closeChangeNameModal();
       
-      // 送出更名通知給老師端
       if (mqttClient && mqttClient.connected) {
-        const hostTopic = `puti/quiz/${myRoomId}/to_host`;
+        var hostTopic = 'puti/quiz/' + myRoomId + '/to_host';
         mqttClient.publish(hostTopic, JSON.stringify({
           type: 'RENAME',
           studentId: myStudentId,
@@ -1551,15 +1565,15 @@ D. 氫氣
     }
 
     function manualChangeRoom() {
-      const newPin = prompt('請輸入要加入的房間代碼 (例如 PUTI1234)：', myRoomId);
+      var newPin = prompt('請輸入要加入的房間代碼 (例如 PUTI1234)：', myRoomId);
       if (newPin && newPin.trim()) {
         location.href = window.location.pathname + '?room=' + newPin.trim().toUpperCase();
       }
     }
 
     function connectStudentMQTT() {
-      const hostTopic = `puti/quiz/${myRoomId}/to_host`;
-      const studentTopic = `puti/quiz/${myRoomId}/to_students`;
+      var hostTopic = 'puti/quiz/' + myRoomId + '/to_host';
+      var studentTopic = 'puti/quiz/' + myRoomId + '/to_students';
 
       mqttClient = mqtt.connect(MQTT_BROKER, {
         clientId: 'stu_' + Math.random().toString(16).substr(2, 8),
@@ -1567,32 +1581,31 @@ D. 氫氣
         reconnectPeriod: 2000
       });
 
-      const statusEl = document.getElementById('student-conn-status');
+      var statusEl = document.getElementById('student-conn-status');
 
-      mqttClient.on('connect', () => {
+      mqttClient.on('connect', function() {
         statusEl.className = 'conn-status conn-connecting';
         statusEl.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> 連結老師大螢幕...';
         mqttClient.subscribe(studentTopic);
 
-        // 啟動自動握手重試 (直到老師端回應 ACK)
         sendJoinHeartbeat();
         if (handshakeInterval) clearInterval(handshakeInterval);
         handshakeInterval = setInterval(sendJoinHeartbeat, 2500);
       });
 
-      mqttClient.on('reconnect', () => {
+      mqttClient.on('reconnect', function() {
         statusEl.className = 'conn-status conn-connecting';
         statusEl.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> 重連中';
       });
 
-      mqttClient.on('offline', () => {
+      mqttClient.on('offline', function() {
         statusEl.className = 'conn-status conn-offline';
         statusEl.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> 斷線';
       });
 
-      mqttClient.on('message', (topic, message) => {
+      mqttClient.on('message', function(topic, message) {
         try {
-          const data = JSON.parse(message.toString());
+          var data = JSON.parse(message.toString());
           handleStudentReceivedData(data);
         } catch(e) {
           console.error(e);
@@ -1602,7 +1615,7 @@ D. 氫氣
 
     function sendJoinHeartbeat() {
       if (mqttClient && mqttClient.connected) {
-        const hostTopic = `puti/quiz/${myRoomId}/to_host`;
+        var hostTopic = 'puti/quiz/' + myRoomId + '/to_host';
         mqttClient.publish(hostTopic, JSON.stringify({
           type: isJoinedConfirmed ? 'HEARTBEAT' : 'JOIN',
           studentId: myStudentId,
@@ -1615,34 +1628,34 @@ D. 氫氣
       if (data.type === 'ACK_JOIN') {
         if (!data.targetStudentId || data.targetStudentId === myStudentId) {
           isJoinedConfirmed = true;
-          const statusEl = document.getElementById('student-conn-status');
+          var statusEl = document.getElementById('student-conn-status');
           statusEl.className = 'conn-status conn-online';
           statusEl.innerHTML = '<i class="fa-solid fa-circle-check"></i> 已加入課堂';
           syncStudentMode(data.mode, data.question, data.qIndex, data.quizLength, data.buzzerLocked);
         }
       }
       else if (data.type === 'SYNC_STATE' || data.type === 'CHANGE_MODE') {
-        const statusEl = document.getElementById('student-conn-status');
+        var statusEl = document.getElementById('student-conn-status');
         statusEl.className = 'conn-status conn-online';
         statusEl.innerHTML = '<i class="fa-solid fa-circle-check"></i> 已加入課堂';
         syncStudentMode(data.mode, data.question, data.qIndex, data.quizLength, data.buzzerLocked);
       }
       else if (data.type === 'BUZZER_UNLOCK') {
         buzzStartTime = performance.now();
-        const btn = document.getElementById('student-giant-buzzer');
+        var btn = document.getElementById('student-giant-buzzer');
         btn.classList.remove('disabled', 'buzzed');
         document.getElementById('student-buzzer-status').textContent = '🔥 搶！快按按鈕！';
-        try { navigator.vibrate?.(100); } catch(e){}
+        try { navigator.vibrate && navigator.vibrate(100); } catch(e){}
       }
       else if (data.type === 'BUZZER_WINNER') {
-        const btn = document.getElementById('student-giant-buzzer');
+        var btn = document.getElementById('student-giant-buzzer');
         btn.classList.add('disabled');
         if (data.winnerId === myStudentId) {
           btn.classList.add('buzzed');
           document.getElementById('student-buzzer-status').textContent = '🎉 你搶到第 1 名！請回答！';
           soundEffects.correct();
         } else {
-          document.getElementById('student-buzzer-status').textContent = `已被 ${data.winnerName} 搶走！`;
+          document.getElementById('student-buzzer-status').textContent = '已被 ' + data.winnerName + ' 搶走！';
         }
       }
     }
@@ -1652,14 +1665,14 @@ D. 氫氣
       document.getElementById('student-buzzer-box').style.display = 'none';
       document.getElementById('student-self-box').style.display = 'none';
 
-      document.querySelectorAll('.student-opt-btn').forEach(b => b.classList.remove('selected'));
+      document.querySelectorAll('.student-opt-btn').forEach(function(b) { b.classList.remove('selected'); });
 
       if (mode === 'normal' || mode === 'speed') {
         document.getElementById('student-choice-box').style.display = 'flex';
-        document.getElementById('student-q-title').textContent = (qIdx + 1) + '. ' + (qData?.question || '請看大螢幕選答');
+        document.getElementById('student-q-title').textContent = (qIdx + 1) + '. ' + (qData ? qData.question : '請看大螢幕選答');
       } else if (mode === 'buzzer') {
         document.getElementById('student-buzzer-box').style.display = 'flex';
-        const btn = document.getElementById('student-giant-buzzer');
+        var btn = document.getElementById('student-giant-buzzer');
         if (bLocked) {
           btn.classList.add('disabled');
           document.getElementById('student-buzzer-status').textContent = '等待老師倒數...';
@@ -1672,52 +1685,52 @@ D. 氫氣
 
     function submitStudentChoice(choice) {
       soundEffects.countdown();
-      document.querySelectorAll('.student-opt-btn').forEach(b => b.classList.remove('selected'));
-      event.target.classList.add('selected');
-      try { navigator.vibrate?.(40); } catch(e){}
+      document.querySelectorAll('.student-opt-btn').forEach(function(b) { b.classList.remove('selected'); });
+      if (event && event.target) event.target.classList.add('selected');
+      try { navigator.vibrate && navigator.vibrate(40); } catch(e){}
       
-      const hostTopic = `puti/quiz/${myRoomId}/to_host`;
+      var hostTopic = 'puti/quiz/' + myRoomId + '/to_host';
       mqttClient.publish(hostTopic, JSON.stringify({
         type: 'SUBMIT_CHOICE',
         studentId: myStudentId,
-        choice
+        choice: choice
       }));
     }
 
     function pressStudentBuzzer() {
-      const btn = document.getElementById('student-giant-buzzer');
+      var btn = document.getElementById('student-giant-buzzer');
       if (btn.classList.contains('disabled')) return;
 
-      const timeDiff = performance.now() - buzzStartTime;
-      try { navigator.vibrate?.([60, 40, 60]); } catch(e){}
+      var timeDiff = performance.now() - buzzStartTime;
+      try { navigator.vibrate && navigator.vibrate([60, 40, 60]); } catch(e){}
       btn.classList.add('disabled');
 
-      const hostTopic = `puti/quiz/${myRoomId}/to_host`;
+      var hostTopic = 'puti/quiz/' + myRoomId + '/to_host';
       mqttClient.publish(hostTopic, JSON.stringify({
         type: 'BUZZ',
         studentId: myStudentId,
         name: myName,
-        timeDiff
+        timeDiff: timeDiff
       }));
     }
 
     function renderStudentSelfQuiz() {
-      let q = quizBank[currentQIndex];
+      var q = quizBank[currentQIndex];
       if (!q) return;
-      document.getElementById('student-self-qnum').textContent = `第 ${currentQIndex + 1} / ${quizBank.length} 題`;
-      document.getElementById('student-self-score').textContent = `得分：${selfScore}`;
+      document.getElementById('student-self-qnum').textContent = '第 ' + (currentQIndex + 1) + ' / ' + quizBank.length + ' 題';
+      document.getElementById('student-self-score').textContent = '得分：' + selfScore;
       document.getElementById('student-self-qtext').textContent = q.question;
 
-      const optContainer = document.getElementById('student-self-options');
+      var optContainer = document.getElementById('student-self-options');
       optContainer.innerHTML = '';
 
-      q.options.forEach(opt => {
-        const btn = document.createElement('button');
+      q.options.forEach(function(opt) {
+        var btn = document.createElement('button');
         btn.className = 'btn btn-outline';
         btn.style.cssText = 'padding:14px; font-size:17px; justify-content:flex-start; text-align:left;';
-        btn.innerHTML = `<span style="width:28px; height:28px; background:#E2DCD5; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; margin-right:8px; font-weight:900;">${opt.key}</span> ${opt.text}`;
+        btn.innerHTML = '<span style="width:28px; height:28px; background:#E2DCD5; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; margin-right:8px; font-weight:900;">' + opt.key + '</span> ' + opt.text;
         
-        btn.onclick = () => {
+        btn.onclick = function() {
           if (opt.key === q.answer) {
             soundEffects.correct();
             btn.style.background = '#E8F5E9';
@@ -1728,9 +1741,9 @@ D. 氫氣
             btn.style.background = '#FFEBEE';
             btn.style.borderColor = '#C62828';
           }
-          optContainer.querySelectorAll('button').forEach(b => b.disabled = true);
-          setTimeout(() => {
-            const hostTopic = `puti/quiz/${myRoomId}/to_host`;
+          optContainer.querySelectorAll('button').forEach(function(b) { b.disabled = true; });
+          setTimeout(function() {
+            var hostTopic = 'puti/quiz/' + myRoomId + '/to_host';
             if (currentQIndex < quizBank.length - 1) {
               currentQIndex++;
               renderStudentSelfQuiz();
@@ -1742,7 +1755,7 @@ D. 氫氣
               }));
             } else {
               soundEffects.celebrate();
-              optContainer.innerHTML = `<div style="text-align:center; padding:20px; font-size:20px; font-weight:900; color:#2E7D32;">🎉 恭喜完成全部測驗！總得分：${selfScore} 分</div>`;
+              optContainer.innerHTML = '<div style="text-align:center; padding:20px; font-size:20px; font-weight:900; color:#2E7D32;">🎉 恭喜完成全部測驗！總得分：' + selfScore + ' 分</div>';
               mqttClient.publish(hostTopic, JSON.stringify({
                 type: 'SELF_PROGRESS',
                 studentId: myStudentId,
@@ -1760,7 +1773,7 @@ D. 氫氣
        5. 老師端渲染與互動控制
        ============================================================ */
     function renderQuestion() {
-      const q = quizBank[currentQIndex];
+      var q = quizBank[currentQIndex];
       if (!q) return;
 
       isRevealed = false;
@@ -1768,7 +1781,7 @@ D. 氫氣
       buzzerLocked = false;
       buzzerRoundWinner = null;
 
-      document.getElementById('q-index-tag').textContent = `第 ${currentQIndex + 1} / ${quizBank.length} 題`;
+      document.getElementById('q-index-tag').textContent = '第 ' + (currentQIndex + 1) + ' / ' + quizBank.length + ' 題';
       document.getElementById('q-title-text').textContent = q.question;
       document.getElementById('explanation-box').style.display = 'none';
       document.getElementById('explanation-text').textContent = q.explanation || '暫無解析';
@@ -1777,13 +1790,13 @@ D. 氫氣
       document.getElementById('buzzer-status-label').textContent = '等待老師啟動搶答...';
       document.getElementById('start-buzz-btn').style.display = 'inline-flex';
 
-      ['A', 'B', 'C', 'D'].forEach((key, idx) => {
-        const opt = q.options.find(o => o.key === key) || q.options[idx];
-        const box = document.getElementById(`opt-box-${key}`);
+      ['A', 'B', 'C', 'D'].forEach(function(key, idx) {
+        var opt = q.options.find(function(o){ return o.key === key; }) || q.options[idx];
+        var box = document.getElementById('opt-box-' + key);
         if (opt) {
           box.style.display = 'flex';
           box.classList.remove('is-correct');
-          document.getElementById(`opt-text-${key}`).textContent = opt.text;
+          document.getElementById('opt-text-' + key).textContent = opt.text;
         } else {
           box.style.display = 'none';
         }
@@ -1795,23 +1808,23 @@ D. 氫氣
     }
 
     function renderVotesBar() {
-      const total = Object.values(votes).reduce((a, b) => a + b, 0) || 1;
-      ['A', 'B', 'C', 'D'].forEach(key => {
-        const count = votes[key] || 0;
-        const pct = Math.round((count / total) * 100);
-        document.getElementById(`opt-bar-${key}`).style.width = `${pct}%`;
-        document.getElementById(`opt-count-${key}`).textContent = `${count} 票 (${pct}%)`;
+      var total = Object.values(votes).reduce(function(a, b){ return a + b; }, 0) || 1;
+      ['A', 'B', 'C', 'D'].forEach(function(key) {
+        var count = votes[key] || 0;
+        var pct = Math.round((count / total) * 100);
+        document.getElementById('opt-bar-' + key).style.width = pct + '%';
+        document.getElementById('opt-count-' + key).textContent = count + ' 票 (' + pct + '%)';
       });
     }
 
     function renderPagination() {
-      const bar = document.getElementById('q-pagination-bar');
+      var bar = document.getElementById('q-pagination-bar');
       bar.innerHTML = '';
-      quizBank.forEach((_, idx) => {
-        const btn = document.createElement('button');
+      quizBank.forEach(function(_, idx) {
+        var btn = document.createElement('button');
         btn.className = 'q-page-btn' + (idx === currentQIndex ? ' active' : '');
         btn.textContent = idx + 1;
-        btn.onclick = () => {
+        btn.onclick = function() {
           currentQIndex = idx;
           renderQuestion();
         };
@@ -1821,7 +1834,7 @@ D. 氫氣
 
     function switchMode(mode) {
       currentMode = mode;
-      document.querySelectorAll('.mode-tab').forEach(t => {
+      document.querySelectorAll('.mode-tab').forEach(function(t) {
         t.classList.toggle('active', t.dataset.mode === mode);
       });
 
@@ -1852,20 +1865,20 @@ D. 氫氣
 
     function toggleReveal() {
       isRevealed = !isRevealed;
-      const q = quizBank[currentQIndex];
-      const correctBox = document.getElementById(`opt-box-${q.answer}`);
+      var q = quizBank[currentQIndex];
+      var correctBox = document.getElementById('opt-box-' + q.answer);
       if (isRevealed) {
-        correctBox?.classList.add('is-correct');
+        if (correctBox) correctBox.classList.add('is-correct');
         document.getElementById('explanation-box').style.display = 'block';
         soundEffects.celebrate();
       } else {
-        correctBox?.classList.remove('is-correct');
+        if (correctBox) correctBox.classList.remove('is-correct');
         document.getElementById('explanation-box').style.display = 'none';
       }
     }
 
     function manualCheck(key) {
-      const q = quizBank[currentQIndex];
+      var q = quizBank[currentQIndex];
       if (key === q.answer) {
         toggleReveal();
       } else {
@@ -1879,14 +1892,14 @@ D. 氫氣
       document.getElementById('buzzer-winner-card').classList.remove('show');
       document.getElementById('start-buzz-btn').style.display = 'none';
 
-      let count = 3;
-      document.getElementById('buzzer-status-label').textContent = `準備... ${count}`;
+      var count = 3;
+      document.getElementById('buzzer-status-label').textContent = '準備... ' + count;
       soundEffects.countdown();
 
-      const timer = setInterval(() => {
+      var timer = setInterval(function() {
         count--;
         if (count > 0) {
-          document.getElementById('buzzer-status-label').textContent = `準備... ${count}`;
+          document.getElementById('buzzer-status-label').textContent = '準備... ' + count;
           soundEffects.countdown();
         } else {
           clearInterval(timer);
@@ -1900,7 +1913,7 @@ D. 氫氣
     function renderBuzzerWinner(winner) {
       document.getElementById('buzzer-status-label').textContent = '搶答結束！';
       document.getElementById('buzzer-winner-name').textContent = winner.name;
-      document.getElementById('buzzer-winner-time').textContent = `反應速度：+${winner.timeDiff} 秒`;
+      document.getElementById('buzzer-winner-time').textContent = '反應速度：+' + winner.timeDiff + ' 秒';
       document.getElementById('buzzer-winner-card').classList.add('show');
       document.getElementById('start-buzz-btn').style.display = 'inline-flex';
     }
@@ -1912,56 +1925,55 @@ D. 氫氣
         if (students[buzzerRoundWinner.studentId]) {
           students[buzzerRoundWinner.studentId].score = (students[buzzerRoundWinner.studentId].score || 0) + 10;
         }
-        alert(`🏆 已為 ${buzzerRoundWinner.name} 加 10 分！`);
+        alert('🏆 已為 ' + buzzerRoundWinner.name + ' 加 10 分！');
       } else {
         soundEffects.wrong();
-        alert(`❌ 答錯了！換下一位或重新搶答！`);
+        alert('❌ 答錯了！換下一位或重新搶答！');
       }
       updateStudentListUI();
     }
 
     function updateStudentListUI() {
-      const list = document.getElementById('student-list-box');
-      const count = Object.keys(students).length;
+      var list = document.getElementById('student-list-box');
+      var count = Object.keys(students).length;
       document.getElementById('online-count').textContent = count;
-      document.getElementById('students-badge').textContent = `${count} 人`;
+      document.getElementById('students-badge').textContent = count + ' 人';
 
       if (count === 0) {
-        list.innerHTML = `<div style="text-align:center; color:var(--text-muted); font-size:13px; margin-top:30px;">等待同學加入...</div>`;
+        list.innerHTML = '<div style="text-align:center; color:var(--text-muted); font-size:13px; margin-top:30px;">等待同學加入...</div>';
         return;
       }
 
       list.innerHTML = '';
-      Object.values(students).forEach(s => {
-        const item = document.createElement('div');
+      Object.values(students).forEach(function(s) {
+        var item = document.createElement('div');
         item.className = 'student-item';
-        item.innerHTML = `<span><i class="fa-solid fa-user-graduate" style="color:var(--color-primary); margin-right:6px;"></i> ${s.name}</span> <span class="student-badge">${s.score} 分</span>`;
+        item.innerHTML = '<span><i class="fa-solid fa-user-graduate" style="color:var(--color-primary); margin-right:6px;"></i> ' + s.name + '</span> <span class="student-badge">' + s.score + ' 分</span>';
         list.appendChild(item);
       });
     }
 
     function renderSelfProgressUI() {
-      const box = document.getElementById('self-progress-list');
+      var box = document.getElementById('self-progress-list');
       box.innerHTML = '';
-      const list = Object.values(students);
+      var list = Object.values(students);
       if (list.length === 0) {
-        box.innerHTML = `<div style="color:var(--text-muted); padding:20px;">尚無同學進度數據</div>`;
+        box.innerHTML = '<div style="color:var(--text-muted); padding:20px;">尚無同學進度數據</div>';
         return;
       }
-      list.forEach(s => {
-        const card = document.createElement('div');
+      list.forEach(function(s) {
+        var card = document.createElement('div');
         card.style.cssText = 'background:#F9F6F0; border-radius:14px; padding:14px; border:1px solid #E2DCD5; display:flex; flex-direction:column; gap:6px;';
-        const pct = Math.round((s.currentQ / quizBank.length) * 100);
-        card.innerHTML = `
-          <div style="display:flex; justify-content:space-between; font-weight:900;">
-            <span>${s.name}</span>
-            <span style="color:#2E7D32;">${s.score} 分</span>
-          </div>
-          <div style="font-size:12px; color:var(--text-muted);">進度：第 ${s.currentQ} / ${quizBank.length} 題 (${pct}%)</div>
-          <div style="width:100%; height:8px; background:#E2DCD5; border-radius:999px; overflow:hidden;">
-            <div style="width:${pct}%; height:100%; background:var(--color-secondary); transition:width 0.3s;"></div>
-          </div>
-        `;
+        var pct = Math.round((s.currentQ / quizBank.length) * 100);
+        card.innerHTML = 
+          '<div style="display:flex; justify-content:space-between; font-weight:900;">' +
+            '<span>' + s.name + '</span>' +
+            '<span style="color:#2E7D32;">' + s.score + ' 分</span>' +
+          '</div>' +
+          '<div style="font-size:12px; color:var(--text-muted);">進度：第 ' + s.currentQ + ' / ' + quizBank.length + ' 題 (' + pct + '%)</div>' +
+          '<div style="width:100%; height:8px; background:#E2DCD5; border-radius:999px; overflow:hidden;">' +
+            '<div style="width:' + pct + '%; height:100%; background:var(--color-secondary); transition:width 0.3s;"></div>' +
+          '</div>';
         box.appendChild(card);
       });
     }
@@ -1974,49 +1986,48 @@ D. 氫氣
         alert('您的瀏覽器不支援語音合成朗讀');
         return;
       }
-      const q = quizBank[currentQIndex];
-      const optStr = q.options.map(o => `${o.key}, ${o.text}`).join('。 ');
-      const utterance = new SpeechSynthesisUtterance(`${q.question}。 選項：${optStr}`);
+      var q = quizBank[currentQIndex];
+      var optStr = q.options.map(function(o){ return o.key + ', ' + o.text; }).join('。 ');
+      var utterance = new SpeechSynthesisUtterance(q.question + '。 選項：' + optStr);
       utterance.lang = 'zh-TW';
       utterance.rate = 1.0;
       window.speechSynthesis.speak(utterance);
     }
 
-    let countdownTimer = null;
     function toggleTimer() {
       if (countdownTimer) {
         clearInterval(countdownTimer);
         countdownTimer = null;
-        document.getElementById('timer-btn').innerHTML = `<i class="fa-regular fa-clock"></i> 倒數 15s`;
+        document.getElementById('timer-btn').innerHTML = '<i class="fa-regular fa-clock"></i> 倒數 15s';
         return;
       }
-      let sec = 15;
-      document.getElementById('timer-btn').innerHTML = `<i class="fa-solid fa-hourglass-half"></i> 剩餘 ${sec}s`;
+      var sec = 15;
+      document.getElementById('timer-btn').innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 剩餘 ' + sec + 's';
       soundEffects.countdown();
-      countdownTimer = setInterval(() => {
+      countdownTimer = setInterval(function() {
         sec--;
         if (sec > 0) {
-          document.getElementById('timer-btn').innerHTML = `<i class="fa-solid fa-hourglass-half"></i> 剩餘 ${sec}s`;
+          document.getElementById('timer-btn').innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 剩餘 ' + sec + 's';
           if (sec <= 3) soundEffects.countdown();
         } else {
           clearInterval(countdownTimer);
           countdownTimer = null;
-          document.getElementById('timer-btn').innerHTML = `<i class="fa-regular fa-clock"></i> 時間到！`;
+          document.getElementById('timer-btn').innerHTML = '<i class="fa-regular fa-clock"></i> 時間到！';
           soundEffects.wrong();
         }
       }, 1000);
     }
 
     function exportResultsCSV() {
-      let csvContent = "\uFEFF座號姓名,當前題號,測驗得分\n";
-      Object.values(students).forEach(s => {
-        csvContent += `"${s.name}",${s.currentQ},${s.score}\n`;
+      var csvContent = "\uFEFF座號姓名,當前題號,測驗得分\n";
+      Object.values(students).forEach(function(s) {
+        csvContent += '"' + s.name + '",' + s.currentQ + ',' + s.score + '\n';
       });
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
+      var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      var url = URL.createObjectURL(blob);
+      var link = document.createElement("a");
       link.setAttribute("href", url);
-      link.setAttribute("download", `Puti-AI_課堂測驗成果_${new Date().toISOString().slice(0,10)}.csv`);
+      link.setAttribute("download", 'Puti-AI_課堂測驗成果_' + new Date().toISOString().slice(0,10) + '.csv');
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -2026,9 +2037,9 @@ D. 氫氣
     function closeBankModal() { document.getElementById('bank-modal').style.display = 'none'; }
     
     function applyPastedQuiz() {
-      const text = document.getElementById('paste-text-input').value;
+      var text = document.getElementById('paste-text-input').value;
       if (!text.trim()) { alert('請先貼上題目內容'); return; }
-      const parsed = parsePastedText(text);
+      var parsed = parsePastedText(text);
       if (parsed.length === 0) {
         alert('無法辨識題目，請確認包含題號與選項格式（如 1. 題目 (A) ... 答案：A）');
         return;
@@ -2038,7 +2049,7 @@ D. 氫氣
       localStorage.setItem('puti_buzzer_quiz', JSON.stringify(quizBank));
       renderQuestion();
       closeBankModal();
-      alert(`🎉 成功辨識並匯入 ${parsed.length} 道題目！`);
+      alert('🎉 成功辨識並匯入 ' + parsed.length + ' 道題目！');
     }
 
     function loadSampleQuiz(id) {
@@ -2051,8 +2062,8 @@ D. 氫氣
     }
 
     function exportQuizJSON() {
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(quizBank, null, 2));
-      const a = document.createElement('a');
+      var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(quizBank, null, 2));
+      var a = document.createElement('a');
       a.setAttribute("href", dataStr);
       a.setAttribute("download", "puti_quiz_bank.json");
       document.body.appendChild(a);
@@ -2061,18 +2072,18 @@ D. 氫氣
     }
 
     function importQuizFile(input) {
-      const file = input.files[0];
+      var file = input.files[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (e) => {
+      var reader = new FileReader();
+      reader.onload = function(e) {
         try {
-          const json = JSON.parse(e.target.result);
+          var json = JSON.parse(e.target.result);
           if (Array.isArray(json)) {
             quizBank = json;
             currentQIndex = 0;
             renderQuestion();
             closeBankModal();
-            alert(`成功載入 ${json.length} 題題庫！`);
+            alert('成功載入 ' + json.length + ' 題題庫！');
           }
         } catch(err) {
           alert('檔案格式錯誤，請提供正確的 JSON 格式');
@@ -2091,17 +2102,17 @@ D. 氫氣
     function closeWheelModal() { document.getElementById('wheel-modal').style.display = 'none'; }
 
     function drawWheel() {
-      const canvas = document.getElementById('wheel-canvas');
-      const ctx = canvas.getContext('2d');
-      const names = Object.values(students).map(s => s.name);
+      var canvas = document.getElementById('wheel-canvas');
+      var ctx = canvas.getContext('2d');
+      var names = Object.values(students).map(function(s){ return s.name; });
       if (names.length === 0) names.push('無在線同學');
       
-      const arc = (2 * Math.PI) / names.length;
-      const colors = ['#E07A5F', '#81B29A', '#F2CC8F', '#3D405B', '#F4A261', '#2A9D8F'];
+      var arc = (2 * Math.PI) / names.length;
+      var colors = ['#E07A5F', '#81B29A', '#F2CC8F', '#3D405B', '#F4A261', '#2A9D8F'];
 
       ctx.clearRect(0, 0, 280, 280);
-      names.forEach((name, i) => {
-        const angle = i * arc;
+      names.forEach(function(name, i) {
+        var angle = i * arc;
         ctx.beginPath();
         ctx.fillStyle = colors[i % colors.length];
         ctx.moveTo(140, 140);
@@ -2120,28 +2131,27 @@ D. 氫氣
     }
 
     function spinWheel() {
-      const names = Object.values(students).map(s => s.name);
+      var names = Object.values(students).map(function(s){ return s.name; });
       if (names.length === 0) {
         document.getElementById('wheel-winner-text').textContent = '請先讓同學加入！';
         return;
       }
       soundEffects.buzz();
-      let rollCount = 15;
-      const timer = setInterval(() => {
-        const randomName = names[Math.floor(Math.random() * names.length)];
+      var rollCount = 15;
+      var timer = setInterval(function() {
+        var randomName = names[Math.floor(Math.random() * names.length)];
         document.getElementById('wheel-winner-text').textContent = randomName;
         soundEffects.countdown();
         rollCount--;
         if (rollCount <= 0) {
           clearInterval(timer);
           soundEffects.celebrate();
-          document.getElementById('wheel-winner-text').textContent = `🎯 恭喜：${randomName}！`;
+          document.getElementById('wheel-winner-text').textContent = '🎯 恭喜：' + randomName + '！';
         }
       }, 100);
     }
 
-    // 鍵盤快捷鍵
-    window.addEventListener('keydown', (e) => {
+    window.addEventListener('keydown', function(e) {
       if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
       if (e.code === 'Space') {
         e.preventDefault();
