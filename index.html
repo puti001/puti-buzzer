@@ -1053,7 +1053,7 @@
 
         <div style="display:flex; flex-direction:column; gap:6px; text-align:left;">
           <label style="font-size: 14px; font-weight:700; color:var(--color-dark);">🔑 房間 PIN 碼：</label>
-          <input type="text" id="student-pin-input" placeholder="例如：8823 或 601" style="font-size:22px; font-weight:900; letter-spacing:3px; text-align:center; color:var(--color-primary); background:#FDF3F0; border:2px solid var(--color-primary); padding:10px; border-radius:12px;" maxlength="10">
+          <input type="text" id="student-pin-input" placeholder="例如：382 916" style="font-size:22px; font-weight:900; letter-spacing:3px; text-align:center; color:var(--color-primary); background:#FDF3F0; border:2px solid var(--color-primary); padding:10px; border-radius:12px;" maxlength="10">
         </div>
 
         <div style="display:flex; flex-direction:column; gap:6px; text-align:left;">
@@ -1650,23 +1650,33 @@
       initStudentClient();
     }
 
+    function formatPinDisplay(pin) {
+      if (!pin) return '';
+      var clean = pin.toString().replace(/\s+/g, '');
+      if (clean.length === 6) {
+        return clean.slice(0, 3) + ' ' + clean.slice(3);
+      }
+      return clean;
+    }
+
+    function generateRandom6DigitPin() {
+      return Math.floor(100000 + Math.random() * 900000).toString();
+    }
+
     function initTeacherHost() {
       document.getElementById('host-view').style.display = 'flex';
       document.getElementById('student-view').style.display = 'none';
       document.getElementById('host-header-actions').style.display = 'flex';
       document.getElementById('student-header-actions').style.display = 'none';
 
-      var savedPin = localStorage.getItem('puti_active_pin');
-      if (!savedPin) {
-        savedPin = Math.floor(1000 + Math.random() * 9000).toString();
-        localStorage.setItem('puti_active_pin', savedPin);
-      }
-      myRoomId = savedPin;
+      // 每次開房自動配發全新獨立的 6 位數純數字 PIN 碼，保證全國跨校跨班零碰撞！
+      myRoomId = generateRandom6DigitPin();
 
-      document.getElementById('room-pin').textContent = myRoomId;
-      document.getElementById('big-pin').textContent = myRoomId;
+      var displayPin = formatPinDisplay(myRoomId);
+      document.getElementById('room-pin').textContent = displayPin;
+      document.getElementById('big-pin').textContent = displayPin;
       var sidePin = document.getElementById('side-pin-display');
-      if (sidePin) sidePin.textContent = myRoomId;
+      if (sidePin) sidePin.textContent = displayPin;
 
       var secSelect = document.getElementById('timer-sec-select');
       if (secSelect) secSelect.value = speedTimeLimit.toString();
@@ -1682,13 +1692,25 @@
     }
 
     function changeRoomPin() {
-      var current = localStorage.getItem('puti_active_pin') || '';
-      var input = prompt('請輸入自訂房間 PIN 碼（例如 601 代表六年一班，或直接留空按確定隨機產生 4 碼）：', current);
+      var input = prompt('請輸入自訂房間 PIN 碼，或直接留空按確定隨機換新 6 碼：', '');
       if (input !== null) {
-        var clean = input.trim().toUpperCase();
-        var newPin = clean || Math.floor(1000 + Math.random() * 9000).toString();
-        localStorage.setItem('puti_active_pin', newPin);
-        location.reload();
+        var clean = input.trim().replace(/\s+/g, '').toUpperCase();
+        myRoomId = clean || generateRandom6DigitPin();
+        var displayPin = formatPinDisplay(myRoomId);
+        document.getElementById('room-pin').textContent = displayPin;
+        document.getElementById('big-pin').textContent = displayPin;
+        var sidePin = document.getElementById('side-pin-display');
+        if (sidePin) sidePin.textContent = displayPin;
+        generateQRCodes();
+        if (mqttClient) {
+          try { mqttClient.end(); } catch(e){}
+          mqttClient = null;
+        }
+        students = {};
+        updateStudentListUI();
+        connectTeacherMQTT();
+        broadcastState();
+        alert('🎉 已更換至新房間：' + displayPin + '！學生請輸入新 PIN 碼或掃描新 QR Code 加入！');
       }
     }
 
@@ -1977,7 +1999,7 @@
 
     function confirmStudentJoin() {
       var pinInput = document.getElementById('student-pin-input');
-      var inputPin = pinInput ? pinInput.value.trim().toUpperCase() : '';
+      var inputPin = pinInput ? pinInput.value.trim().replace(/\s+/g, '').toUpperCase() : '';
       if (!inputPin && !myRoomId) {
         alert('請先輸入大螢幕上的房間 PIN 碼！');
         if (pinInput) pinInput.focus();
@@ -1986,7 +2008,7 @@
       if (inputPin) {
         myRoomId = inputPin;
       }
-      document.getElementById('student-room-display').textContent = myRoomId;
+      document.getElementById('student-room-display').textContent = formatPinDisplay(myRoomId);
 
       var input = document.getElementById('student-name-input');
       var val = input.value.trim();
@@ -2023,9 +2045,9 @@
     }
 
     function manualChangeRoom() {
-      var newPin = prompt('請輸入要加入的房間代碼 (例如 PUTI1234)：', myRoomId);
+      var newPin = prompt('請輸入要加入的房間代碼 (例如 382 916)：', formatPinDisplay(myRoomId));
       if (newPin && newPin.trim()) {
-        location.href = window.location.pathname + '?room=' + newPin.trim().toUpperCase();
+        location.href = window.location.pathname + '?room=' + newPin.trim().replace(/\s+/g, '').toUpperCase();
       }
     }
 
