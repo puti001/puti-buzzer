@@ -834,10 +834,13 @@
         <span class="online-dot"></span>
         <span id="online-count">0</span> 人在線
       </div>
+      <button class="btn btn-outline" onclick="copyStudentBroadcastLink()" title="複製包含房間 PIN 碼的學生端專用網址，可直接貼到極域等廣播軟體或電子白板給全班" style="background:#E8F5E9; color:#2E7D32; border-color:#A5D6A7; font-weight:900;">
+        <i class="fa-solid fa-copy"></i> 複製學生廣播連結
+      </button>
       <button class="btn btn-outline" style="color:#C62828; border-color:#FFCDD2;" onclick="resetGameScores()" title="免重新掃碼，直接將全班分數歸零重測"><i class="fa-solid fa-rotate-left"></i> 重測歸零</button>
       <button class="btn btn-outline" onclick="openBankModal()"><i class="fa-solid fa-book"></i> 題庫庫存</button>
       <button class="btn btn-outline" onclick="openWheelModal()"><i class="fa-solid fa-dice"></i> 幸運抽籤</button>
-      <button class="btn btn-primary" onclick="switchToStudentMode()" title="若這台裝置是學生手機/平板，點此手動輸入PIN碼加入作答"><i class="fa-solid fa-mobile-screen"></i> 學生輸入PIN碼端</button>
+      <button class="btn btn-outline" onclick="switchToStudentMode()" title="切換至學生作答畫面體驗"><i class="fa-solid fa-mobile-screen"></i> 切換學生端</button>
     </div>
 
     <!-- 學生端顯示 -->
@@ -859,6 +862,7 @@
         <i class="fa-solid fa-star" style="color:#F2CC8F;"></i>
         <span id="my-score-display">0 分</span>
       </div>
+      <button class="btn btn-outline" style="font-size:12px; padding:4px 10px; color:var(--text-muted);" onclick="openTeacherPwdModal()" title="教師開房出題"><i class="fa-solid fa-chalkboard-user"></i> 我是老師</button>
     </div>
   </header>
 
@@ -1060,6 +1064,12 @@
         <button class="btn btn-primary" style="font-size: 18px; padding: 14px;" onclick="confirmStudentJoin()">
           <i class="fa-solid fa-right-to-bracket"></i> 進入課堂
         </button>
+
+        <div style="margin-top: 14px; padding-top: 14px; border-top: 1px dashed #E2DCD5;">
+          <button class="btn btn-outline" style="font-size: 13px; padding: 6px 14px; color: var(--text-muted); border-style:dashed;" onclick="openTeacherPwdModal()">
+            <i class="fa-solid fa-chalkboard-user"></i> 我是老師，點此開房出題 (需密碼)
+          </button>
+        </div>
       </div>
 
       <!-- 模式 1 / 3 答題按鈕 -->
@@ -1108,6 +1118,26 @@
 
     </div>
   </main>
+
+  <!-- 教師通關密碼驗證燈箱 -->
+  <div class="modal-overlay" id="teacher-pwd-modal">
+    <div class="modal-card" style="max-width:380px; text-align:center;">
+      <div class="modal-header">
+        <div class="modal-title"><i class="fa-solid fa-lock"></i> 教師身分驗證</div>
+        <button class="btn btn-outline" onclick="closeTeacherPwdModal()"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" style="gap:14px;">
+        <div style="font-size:14px; color:var(--text-muted);">
+          請輸入開房通關密碼，確認後開啟教師大螢幕主控台：
+        </div>
+        <input type="password" id="teacher-pwd-input" placeholder="請輸入密碼" style="font-family:inherit; font-size:22px; font-weight:900; text-align:center; padding:10px; border-radius:12px; border:2px solid var(--color-primary); outline:none; letter-spacing:4px;">
+        <div id="teacher-pwd-err" style="color:#C62828; font-size:13px; font-weight:700; display:none;">❌ 密碼錯誤！學生請在原畫面輸入 PIN 碼作答。</div>
+        <button class="btn btn-primary" onclick="verifyTeacherPassword()" style="font-size:16px; padding:12px;">
+          <i class="fa-solid fa-key"></i> 驗證並進入教師端
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- 修改暱稱燈箱 -->
   <div class="modal-overlay" id="change-name-modal">
@@ -1592,7 +1622,19 @@
        ============================================================ */
     var urlParams = new URLSearchParams(window.location.search);
     var roomParam = urlParams.get('room');
-    var isStudent = Boolean(roomParam);
+    var teacherParam = urlParams.get('teacher') || urlParams.get('host');
+    var isTeacherAuthed = (sessionStorage.getItem('puti_teacher_authed') === 'true');
+
+    // 核心安全分流規則：
+    // 1. 若 URL 自帶 ?teacher=puti 或 ?host=puti，自動通過驗證
+    if (teacherParam && teacherParam.trim().toLowerCase() === 'puti') {
+      sessionStorage.setItem('puti_teacher_authed', 'true');
+      isTeacherAuthed = true;
+    }
+
+    // 2. 只有在【沒有指定 room 參數】且【通過 puti 密碼驗證】時，才是教師大螢幕端！
+    //    其他所有狀況（電腦教室學生開啟純網址、點學生廣播連結、掃碼），一律預設為學生端！
+    var isStudent = Boolean(roomParam) || !isTeacherAuthed;
 
     myRoomId = (roomParam || '').toUpperCase();
     myStudentId = localStorage.getItem('puti_student_uuid') || ('stu_' + Math.random().toString(36).substr(2, 9));
@@ -1881,8 +1923,56 @@
       initStudentClient();
     }
 
-    function switchToTeacherMode() {
-      location.href = window.location.pathname;
+    function copyStudentBroadcastLink() {
+      var pin = myRoomId || localStorage.getItem('puti_active_pin') || '';
+      var studentUrl = window.location.origin + window.location.pathname + '?room=' + pin;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(studentUrl).then(function() {
+          alert('📋 學生專用網址已複製到剪貼簿！\n\n網址：' + studentUrl + '\n\n💡 請直接貼到電腦教室廣播軟體（如極域/聯想）或電子白板，學生點開免輸入房號，直接輸入座號姓名即可進入！');
+        }).catch(function() {
+          prompt('請複製以下學生專用網址：', studentUrl);
+        });
+      } else {
+        prompt('請複製以下學生專用網址：', studentUrl);
+      }
+    }
+
+    function openTeacherPwdModal() {
+      document.getElementById('teacher-pwd-modal').style.display = 'flex';
+      var inp = document.getElementById('teacher-pwd-input');
+      var err = document.getElementById('teacher-pwd-err');
+      if (err) err.style.display = 'none';
+      if (inp) {
+        inp.value = '';
+        setTimeout(function(){ inp.focus(); }, 150);
+      }
+    }
+
+    function closeTeacherPwdModal() {
+      document.getElementById('teacher-pwd-modal').style.display = 'none';
+    }
+
+    function verifyTeacherPassword() {
+      var inp = document.getElementById('teacher-pwd-input');
+      var val = (inp ? inp.value : '').trim().toLowerCase();
+      if (val === 'puti') {
+        sessionStorage.setItem('puti_teacher_authed', 'true');
+        closeTeacherPwdModal();
+        if (mqttClient) {
+          try { mqttClient.end(); } catch(e){}
+          mqttClient = null;
+        }
+        initTeacherHost();
+        alert('🎉 密碼驗證成功！已進入教師大螢幕主控台！');
+      } else {
+        var err = document.getElementById('teacher-pwd-err');
+        if (err) err.style.display = 'block';
+        if (inp) {
+          inp.value = '';
+          inp.focus();
+        }
+        try { navigator.vibrate && navigator.vibrate([100, 50, 100]); } catch(e){}
+      }
     }
 
     function confirmStudentJoin() {
@@ -3214,6 +3304,12 @@
       if (nameInp) {
         nameInp.addEventListener('keydown', function(e) {
           if (e.key === 'Enter') confirmStudentJoin();
+        });
+      }
+      var pwdInp = document.getElementById('teacher-pwd-input');
+      if (pwdInp) {
+        pwdInp.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') verifyTeacherPassword();
         });
       }
     });
