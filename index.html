@@ -1123,33 +1123,116 @@
 
   <!-- 題庫管理燈箱 (Modal) -->
   <div class="modal-overlay" id="bank-modal">
-    <div class="modal-card">
+    <div class="modal-card" style="max-width: 780px;">
       <div class="modal-header">
-        <div class="modal-title">📚 題庫管理與智慧貼上</div>
+        <div class="modal-title"><i class="fa-solid fa-book-open-reader"></i> 題庫管理與智慧出題</div>
         <button class="btn btn-outline" onclick="closeBankModal()"><i class="fa-solid fa-xmark"></i></button>
       </div>
-      <div class="modal-body">
-        <div style="font-size: 14px; color: var(--text-muted);">
-          直接將考卷文字貼在下方，系統會自動辨識題號、題目主幹、A/B/C/D 選項與答案：
-        </div>
-        <textarea class="raw-textarea" id="paste-text-input" placeholder="1. 台灣最高峰是哪一座山？
-(A) 玉山 (B) 雪山 (C) 陽明山 (D) 阿里山
-答案：A
-解析：玉山主峰海拔3952公尺，為台灣第一高峰。
+
+      <!-- 分頁切換 Tab -->
+      <div style="display:flex; gap:8px; border-bottom:2px solid #EFEAE3; padding-bottom:8px; margin-bottom:12px;">
+        <button class="btn btn-primary" id="tab-btn-paste" onclick="switchBankTab('paste')" style="font-size:14px; padding:8px 14px;">
+          <i class="fa-solid fa-paste"></i> 1. 考卷 / Excel 貼上
+        </button>
+        <button class="btn btn-outline" id="tab-btn-preview" onclick="switchBankTab('preview')" style="font-size:14px; padding:8px 14px;">
+          <i class="fa-solid fa-list-check"></i> 2. 審題與即時微調 (<span id="preview-count-badge">0</span> 題)
+        </button>
+        <button class="btn btn-outline" id="tab-btn-ai" onclick="switchBankTab('ai')" style="font-size:14px; padding:8px 14px;">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> 3. 🤖 AI 出題小幫手
+        </button>
+      </div>
+
+      <div class="modal-body" style="padding:0;">
+        <!-- TAB 1: 貼上考卷 / 表格 -->
+        <div id="bank-tab-paste" style="display:flex; flex-direction:column; gap:12px;">
+          <div style="background:#F4F1EA; border-radius:12px; padding:10px 14px; font-size:13px; color:var(--text-main); line-height:1.5; border-left:4px solid var(--color-primary);">
+            💡 <strong>超強容錯支援：</strong>
+            直貼各版考卷、<strong>括號答案 <code>1.( A )</code></strong>、<strong>選項 <code>①②③④</code></strong>、<strong>卷末集中解答</strong>，或直接<strong>從 Excel / Google 試算表複製表格</strong>貼入，系統都能自動辨識！
+          </div>
+
+          <textarea class="raw-textarea" id="paste-text-input" style="min-height:180px; font-size:14px; line-height:1.6;" placeholder="可直接貼上考卷內容，例如：
+1. ( B ) 台灣的第一高峰是哪座山？ (A)雪山 (B)玉山 (C)合歡山 (D)陽明山
+解析：玉山主峰海拔3952公尺。
 
 2. 光合作用需要的主要氣體是？
-A. 氧氣
-B. 二氧化碳
-C. 氮氣
-D. 氫氣
-答案：B"></textarea>
-        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-          <button class="btn btn-primary" onclick="applyPastedQuiz()"><i class="fa-solid fa-wand-magic-sparkles"></i> 智能辨識並載入題庫</button>
-          <button class="btn btn-secondary" onclick="loadSampleQuiz(1)">載入自然科學範例</button>
-          <button class="btn btn-secondary" onclick="loadSampleQuiz(2)">載入成語趣味範例</button>
-          <button class="btn btn-outline" onclick="exportQuizJSON()"><i class="fa-solid fa-download"></i> 匯出 JSON</button>
-          <button class="btn btn-outline" onclick="document.getElementById('import-file').click()"><i class="fa-solid fa-upload"></i> 匯入題庫檔</button>
-          <input type="file" id="import-file" style="display:none;" accept=".json,.csv" onchange="importQuizFile(this)">
+(1)氧氣 (2)二氧化碳 (3)氮氣 (4)氫氣
+答案：2
+
+或者從 Excel 複製題目表格直接貼上！"></textarea>
+
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items:center;">
+            <button class="btn btn-primary" onclick="recognizeAndPreview()"><i class="fa-solid fa-wand-magic-sparkles"></i> 智能辨識並審題預覽</button>
+            <button class="btn btn-secondary" onclick="loadSampleQuiz(1)">載入自然科學範例</button>
+            <button class="btn btn-secondary" onclick="loadSampleQuiz(2)">載入成語趣味範例</button>
+            <button class="btn btn-outline" onclick="exportQuizJSON()"><i class="fa-solid fa-download"></i> 匯出 JSON</button>
+            <button class="btn btn-outline" onclick="document.getElementById('import-file').click()"><i class="fa-solid fa-upload"></i> 匯入題庫檔</button>
+            <input type="file" id="import-file" style="display:none;" accept=".json,.csv" onchange="importQuizFile(this)">
+          </div>
+        </div>
+
+        <!-- TAB 2: 審題與即時微調 -->
+        <div id="bank-tab-preview" style="display:none; flex-direction:column; gap:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:12px; padding:10px 14px;">
+            <div style="font-size:14px; font-weight:700; color:#2E7D32;" id="preview-status-text">
+              共解析出 0 題，請檢查題目與正解是否正確：
+            </div>
+            <button class="btn btn-primary" onclick="confirmApplyPreview()" style="font-size:14px; padding:6px 14px;">
+              <i class="fa-solid fa-check"></i> 確認套用至全班課堂
+            </button>
+          </div>
+
+          <div id="preview-list-container" style="max-height:360px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding-right:4px;">
+            <!-- 動態生成題目卡片 -->
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+            <button class="btn btn-outline" onclick="switchBankTab('paste')"><i class="fa-solid fa-arrow-left"></i> 返回修改文字</button>
+            <button class="btn btn-primary" style="font-size:16px; padding:10px 24px;" onclick="confirmApplyPreview()">
+              <i class="fa-solid fa-rocket"></i> 確認載入全班課堂！
+            </button>
+          </div>
+        </div>
+
+        <!-- TAB 3: AI 出題小幫手 -->
+        <div id="bank-tab-ai" style="display:none; flex-direction:column; gap:12px;">
+          <div style="background:#FDF3F0; border:1px solid #F5CAC3; border-radius:12px; padding:12px 14px; font-size:13px; color:var(--text-main); line-height:1.5;">
+            💡 <strong>免打字 30 秒出題法：</strong>
+            填寫出題主題，點擊下方「一鍵複製 Prompt」，貼給 <strong>ChatGPT、Claude 或 Google Gemini</strong>，將 AI 生成的文字複製貼回「1. 考卷貼上」頁籤即可！
+          </div>
+
+          <div style="display:grid; grid-template-columns: 2fr 1fr 1fr; gap:10px;">
+            <div>
+              <label style="font-size:12px; font-weight:700; color:var(--text-muted);">出題主題與單元：</label>
+              <input type="text" id="ai-topic-input" value="國小五年級自然：太陽與四季變換" style="width:100%; padding:8px 12px; border-radius:10px; border:2px solid #E2DCD5; font-family:inherit; font-weight:700;" oninput="generateAIPromptText()">
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:700; color:var(--text-muted);">題數：</label>
+              <select id="ai-count-select" style="width:100%; padding:8px; border-radius:10px; border:2px solid #E2DCD5; font-family:inherit; font-weight:700;" onchange="generateAIPromptText()">
+                <option value="3">3 題</option>
+                <option value="5" selected>5 題 (標準)</option>
+                <option value="8">8 題</option>
+                <option value="10">10 題</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:12px; font-weight:700; color:var(--text-muted);">難易度：</label>
+              <select id="ai-diff-select" style="width:100%; padding:8px; border-radius:10px; border:2px solid #E2DCD5; font-family:inherit; font-weight:700;" onchange="generateAIPromptText()">
+                <option value="適中" selected>適中 (基礎與理解)</option>
+                <option value="簡單">簡單 (暖身快問快答)</option>
+                <option value="挑戰性">挑戰性 (思辨與應用)</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <span style="font-size:12px; font-weight:700; color:var(--text-muted);">AI 出題提示詞 (Prompt)：</span>
+              <button class="btn btn-primary" onclick="copyAIPrompt()" style="font-size:13px; padding:4px 12px;">
+                <i class="fa-regular fa-copy"></i> 複製提示詞
+              </button>
+            </div>
+            <textarea id="ai-prompt-preview" readonly style="width:100%; height:130px; background:#F8F6F2; border:1px solid #E2DCD5; border-radius:12px; padding:10px; font-size:12px; font-family:monospace; line-height:1.5; resize:none;"></textarea>
+          </div>
         </div>
       </div>
     </div>
@@ -1335,9 +1418,87 @@ D. 氫氣
 
     var quizBank = JSON.parse(localStorage.getItem('puti_buzzer_quiz') || 'null') || sampleBanks[1];
 
+    function normalizeKey(k) {
+      k = (k || '').toString().trim().toUpperCase();
+      var map = {
+        '1': 'A', '2': 'B', '3': 'C', '4': 'D',
+        '①': 'A', '②': 'B', '③': 'C', '④': 'D',
+        '一': 'A', '二': 'B', '三': 'C', '四': 'D',
+        'Ａ': 'A', 'Ｂ': 'B', 'Ｃ': 'C', 'Ｄ': 'D'
+      };
+      return map[k] || k;
+    }
+
     function parsePastedText(raw) {
+      if (!raw || !raw.trim()) return [];
+      raw = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+      // 1. 檢查是否為 Excel / 試算表 TSV 格式 (Tab 分隔)
+      var tsvLines = raw.split('\n').filter(function(l){ return l.trim().length > 0; });
+      var tabCount = tsvLines.reduce(function(acc, l){ return acc + (l.split('\t').length - 1); }, 0);
+      if (tabCount >= tsvLines.length && tsvLines.length >= 1) {
+        var tsvQuestions = [];
+        tsvLines.forEach(function(line) {
+          var cols = line.split('\t').map(function(c){ return c.trim(); }).filter(Boolean);
+          if (cols.length >= 3) {
+            var qText = cols[0];
+            var options = [];
+            var ans = 'A';
+            var exp = '';
+
+            var optCols = cols.slice(1);
+            var foundAns = null;
+            for (var i = optCols.length - 1; i >= 0; i--) {
+              var c = optCols[i];
+              if (/^(?:[A-Da-d1-4①-④]|(?:答案|答|Ans)[:：]?\s*[A-Da-d1-4①-④])$/i.test(c)) {
+                var m = c.match(/[A-Da-d1-4①-④]/);
+                if (m) {
+                  foundAns = normalizeKey(m[0]);
+                  optCols.splice(i, 1);
+                  break;
+                }
+              }
+            }
+            if (foundAns) ans = foundAns;
+
+            optCols.forEach(function(optStr, oIdx) {
+              var key = String.fromCharCode(65 + oIdx);
+              var cleanOpt = optStr.replace(/^(?:\([A-Da-d1-4①-④]\)|[A-Da-d1-4①-④][\.、\s])\s*/, '');
+              options.push({ key: key, text: cleanOpt });
+            });
+
+            if (options.length >= 2) {
+              tsvQuestions.push({
+                id: 'q_' + (tsvQuestions.length + 1),
+                question: qText.replace(/^[0-9]+[\.、\s]*/, ''),
+                options: options,
+                answer: ans,
+                explanation: exp
+              });
+            }
+          }
+        });
+        if (tsvQuestions.length > 0) return tsvQuestions;
+      }
+
+      // 2. 檢查考卷文末集中解答區
+      var answerMap = {};
+      var ansBlockMatch = raw.match(/(?:\n|^)\s*(?:【?(?:解答|答案|簡答|參考答案|KEY)】?[:：]?)\s*([\s\S]+)$/i);
+      var mainText = raw;
+      if (ansBlockMatch) {
+        var ansText = ansBlockMatch[1];
+        mainText = raw.substring(0, ansBlockMatch.index);
+        var itemMatches = Array.from(ansText.matchAll(/(?:([0-9]{1,3})[\.、\s\(\)]*|(?:\b))([A-Da-d1-4①-④])\b/g));
+        var autoIdx = 1;
+        itemMatches.forEach(function(m) {
+          var qNum = m[1] ? parseInt(m[1], 10) : autoIdx++;
+          answerMap[qNum] = normalizeKey(m[2]);
+        });
+      }
+
+      // 3. 題目區塊分割 (支援 1. 或 第1題 或 (1) 或 （1）)
       var questions = [];
-      var blocks = raw.split(/\n\s*(?=(?:[0-9]{1,3}[\.、\s]|第[0-9]+題))/g);
+      var blocks = mainText.split(/\n\s*(?=(?:[0-9]{1,3}[\.、\s]|第[0-9]+題[:：]?|\([0-9]{1,3}\)|（[0-9]{1,3}）))/g);
 
       for (var b = 0; b < blocks.length; b++) {
         var block = blocks[b];
@@ -1345,45 +1506,76 @@ D. 氫氣
         var lines = block.trim().split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
         if (lines.length === 0) continue;
 
-        var questionText = lines[0].replace(/^(?:[0-9]{1,3}[\.、\s]|第[0-9]+題[:：]?)\s*/, '');
+        var firstLine = lines[0];
+        var qNumMatch = firstLine.match(/^(?:([0-9]{1,3})[\.、\s]|第([0-9]+)題[:：]?|\(([0-9]{1,3})\)|（([0-9]{1,3})）)\s*/);
+        var qNum = qNumMatch ? parseInt(qNumMatch[1] || qNumMatch[2] || qNumMatch[3] || qNumMatch[4], 10) : (questions.length + 1);
+        var questionText = firstLine.replace(/^(?:[0-9]{1,3}[\.、\s]|第[0-9]+題[:：]?|\([0-9]{1,3}\)|（[0-9]{1,3}）)\s*/, '');
+
+        var detectedAns = null;
+        // 檢查題幹開頭是否含括號答案，如 ( B ) 或 （2）或 【A】
+        var bracketAnsMatch = questionText.match(/^[\(（【]\s*([A-Da-d1-4①-④])\s*[\)）】]\s*/);
+        if (bracketAnsMatch) {
+          detectedAns = normalizeKey(bracketAnsMatch[1]);
+          questionText = questionText.replace(/^[\(（【]\s*([A-Da-d1-4①-④])\s*[\)）】]\s*/, '');
+        }
+
         var options = [];
-        var answer = 'A';
+        var answer = detectedAns || answerMap[qNum] || 'A';
         var explanation = '';
 
         for (var i = 1; i < lines.length; i++) {
           var line = lines[i];
-          var ansMatch = line.match(/(?:答案|Ans|KEY)[:：\s]*([A-Da-d1-4])/i);
+
+          // 檢查獨立答案行
+          var ansMatch = line.match(/(?:答案|答|Ans|KEY)[:：\s]*([A-Da-d1-4①-④])/i);
           if (ansMatch) {
-            var val = ansMatch[1].toUpperCase();
-            answer = ({'1':'A','2':'B','3':'C','4':'D'})[val] || val;
+            answer = normalizeKey(ansMatch[1]);
             continue;
           }
-          var expMatch = line.match(/^(?:解析|說明|Note)[:：]\s*(.*)/i);
+
+          // 檢查解析行
+          var expMatch = line.match(/^(?:解析|說明|Note|說明|詳解)[:：]\s*(.*)/i);
           if (expMatch) {
             explanation = expMatch[1];
             continue;
           }
 
-          var optMatches = Array.from(line.matchAll(/(?:\(([A-D1-4])\)|([A-D1-4])[\.、\s])\s*([^\(A-D1-4]+)/gi));
-          if (optMatches.length > 0) {
-            optMatches.forEach(function(m) {
-              var k = (m[1] || m[2]).toUpperCase();
-              k = ({'1':'A','2':'B','3':'C','4':'D'})[k] || k;
-              options.push({ key: k, text: m[3].trim() });
+          // 檢查同行多個選項：如 (A) 雪山 (B) 玉山
+          var inlineOpts = Array.from(line.matchAll(/(?:\(([A-Da-d1-4①-④])\)|（([A-Da-d1-4①-④])）|([A-Da-d1-4①-④])[\.、\s])\s*([^\(（A-Da-d1-4①-④]+)/g));
+          if (inlineOpts.length >= 2) {
+            inlineOpts.forEach(function(m) {
+              var k = normalizeKey(m[1] || m[2] || m[3]);
+              options.push({ key: k, text: m[4].trim() });
             });
-          } else if (line.match(/^[A-D1-4][\.、\s]/)) {
-            var k = line[0].toUpperCase();
-            k = ({'1':'A','2':'B','3':'C','4':'D'})[k] || k;
-            options.push({ key: k, text: line.substring(2).trim() });
+          } else if (line.match(/^(?:\(([A-Da-d1-4①-④])\)|（([A-Da-d1-4①-④])）|([A-Da-d1-4①-④])[\.、\s])/)) {
+            var mSingle = line.match(/^(?:\(([A-Da-d1-4①-④])\)|（([A-Da-d1-4①-④])）|([A-Da-d1-4①-④])[\.、\s])\s*(.*)/);
+            if (mSingle) {
+              var kSingle = normalizeKey(mSingle[1] || mSingle[2] || mSingle[3]);
+              options.push({ key: kSingle, text: mSingle[4].trim() });
+            }
           } else {
             questionText += ' ' + line;
+          }
+        }
+
+        // 若選項在題幹行內 (第 0 行)
+        if (options.length === 0) {
+          var inlineOpts0 = Array.from(questionText.matchAll(/(?:\(([A-Da-d1-4①-④])\)|（([A-Da-d1-4①-④])）|([A-Da-d1-4①-④])[\.、\s])\s*([^\(（A-Da-d1-4①-④]+)/g));
+          if (inlineOpts0.length >= 2) {
+            var firstOptIdx = questionText.search(/(?:\(([A-Da-d1-4①-④])\)|（([A-Da-d1-4①-④])）|([A-Da-d1-4①-④])[\.、\s])/);
+            var cleanQ = questionText.substring(0, firstOptIdx).trim();
+            inlineOpts0.forEach(function(m) {
+              var k = normalizeKey(m[1] || m[2] || m[3]);
+              options.push({ key: k, text: m[4].trim() });
+            });
+            questionText = cleanQ;
           }
         }
 
         if (options.length >= 2) {
           questions.push({
             id: 'q_' + (questions.length + 1),
-            question: questionText,
+            question: questionText.trim(),
             options: options,
             answer: answer,
             explanation: explanation
@@ -2680,35 +2872,183 @@ D. 氫氣
       document.body.removeChild(link);
     }
 
-    function openBankModal() { document.getElementById('bank-modal').style.display = 'flex'; }
-    function closeBankModal() { document.getElementById('bank-modal').style.display = 'none'; }
-    
-    function applyPastedQuiz() {
+    var editingQuizBank = [];
+
+    function switchBankTab(tabName) {
+      var tabPaste = document.getElementById('bank-tab-paste');
+      var tabPreview = document.getElementById('bank-tab-preview');
+      var tabAi = document.getElementById('bank-tab-ai');
+
+      if (tabPaste) tabPaste.style.display = (tabName === 'paste') ? 'flex' : 'none';
+      if (tabPreview) tabPreview.style.display = (tabName === 'preview') ? 'flex' : 'none';
+      if (tabAi) tabAi.style.display = (tabName === 'ai') ? 'flex' : 'none';
+
+      var btnPaste = document.getElementById('tab-btn-paste');
+      var btnPreview = document.getElementById('tab-btn-preview');
+      var btnAi = document.getElementById('tab-btn-ai');
+
+      if (btnPaste) btnPaste.className = (tabName === 'paste') ? 'btn btn-primary' : 'btn btn-outline';
+      if (btnPreview) btnPreview.className = (tabName === 'preview') ? 'btn btn-primary' : 'btn btn-outline';
+      if (btnAi) btnAi.className = (tabName === 'ai') ? 'btn btn-primary' : 'btn btn-outline';
+
+      if (tabName === 'ai') generateAIPromptText();
+    }
+
+    function openBankModal() {
+      document.getElementById('bank-modal').style.display = 'flex';
+      switchBankTab('paste');
+      generateAIPromptText();
+    }
+
+    function closeBankModal() {
+      document.getElementById('bank-modal').style.display = 'none';
+    }
+
+    function recognizeAndPreview() {
       var text = document.getElementById('paste-text-input').value;
-      if (!text.trim()) { alert('請先貼上題目內容'); return; }
-      var parsed = parsePastedText(text);
-      if (parsed.length === 0) {
-        alert('無法辨識題目，請確認包含題號與選項格式（如 1. 題目 (A) ... 答案：A）');
+      if (!text.trim()) {
+        alert('請先在輸入框貼上考卷文字或 Excel 表格內容！');
         return;
       }
-      quizBank = parsed;
+      var parsed = parsePastedText(text);
+      if (parsed.length === 0) {
+        alert('無法辨識題目格式！\n請確認內容包含題號與選項（如 1. 題目 (A)選項1 (B)選項2 答案：A），或直接從 Excel 貼上表格。');
+        return;
+      }
+      editingQuizBank = JSON.parse(JSON.stringify(parsed));
+      renderPreviewList();
+      switchBankTab('preview');
+    }
+
+    function renderPreviewList() {
+      var container = document.getElementById('preview-list-container');
+      var countBadge = document.getElementById('preview-count-badge');
+      var statusText = document.getElementById('preview-status-text');
+
+      if (countBadge) countBadge.textContent = editingQuizBank.length;
+      if (statusText) statusText.textContent = '🎉 共解析出 ' + editingQuizBank.length + ' 道題目，可直接在下方切換正解或微調：';
+
+      if (!container) return;
+      container.innerHTML = '';
+
+      if (editingQuizBank.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted);">目前沒有題目，請返回第一頁貼上文字或載入範例。</div>';
+        return;
+      }
+
+      editingQuizBank.forEach(function(q, idx) {
+        var card = document.createElement('div');
+        card.style.cssText = 'background:white; border-radius:14px; border:2px solid #E2DCD5; padding:12px 16px; display:flex; flex-direction:column; gap:8px; box-shadow:var(--shadow-sm);';
+
+        var optionsHtml = q.options.map(function(opt) {
+          var isAns = (opt.key === q.answer);
+          return '<span style="background:' + (isAns ? '#E8F5E9' : '#F8F6F2') + '; color:' + (isAns ? '#2E7D32' : 'var(--text-main)') + '; border:1px solid ' + (isAns ? '#A5D6A7' : '#E2DCD5') + '; font-weight:' + (isAns ? '900' : '500') + '; padding:4px 8px; border-radius:8px; font-size:13px; display:inline-flex; align-items:center; gap:4px;">' +
+            '<strong>(' + opt.key + ')</strong> ' + opt.text +
+          '</span>';
+        }).join(' ');
+
+        var selectOptions = ['A', 'B', 'C', 'D'].map(function(k) {
+          return '<option value="' + k + '"' + (q.answer === k ? ' selected' : '') + '>正解：' + k + '</option>';
+        }).join('');
+
+        card.innerHTML =
+          '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">' +
+            '<div style="flex:1;">' +
+              '<div style="font-weight:900; font-size:15px; color:var(--color-dark); margin-bottom:6px;">' +
+                '<span style="background:var(--color-primary); color:white; padding:2px 8px; border-radius:6px; font-size:12px; margin-right:6px;">第 ' + (idx + 1) + ' 題</span>' +
+                q.question +
+              '</div>' +
+              '<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:4px;">' + optionsHtml + '</div>' +
+              (q.explanation ? '<div style="font-size:12px; color:var(--text-muted);"><i class="fa-regular fa-lightbulb"></i> 解析：' + q.explanation + '</div>' : '') +
+            '</div>' +
+            '<div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">' +
+              '<select onchange="updatePreviewAnswer(' + idx + ', this.value)" style="padding:6px 10px; border-radius:8px; border:2px solid var(--color-primary); font-family:inherit; font-weight:900; font-size:13px; background:#FDF3F0; color:var(--color-primary); cursor:pointer;">' +
+                selectOptions +
+              '</select>' +
+              '<button class="btn btn-outline" onclick="deletePreviewItem(' + idx + ')" style="padding:6px 10px; color:#D90429; border-color:#FFCDD2;" title="刪除本題">' +
+                '<i class="fa-solid fa-trash-can"></i>' +
+              '</button>' +
+            '</div>' +
+          '</div>';
+
+        container.appendChild(card);
+      });
+    }
+
+    function updatePreviewAnswer(idx, newAns) {
+      if (editingQuizBank[idx]) {
+        editingQuizBank[idx].answer = newAns;
+        renderPreviewList();
+      }
+    }
+
+    function deletePreviewItem(idx) {
+      if (confirm('確定要刪除第 ' + (idx + 1) + ' 題嗎？')) {
+        editingQuizBank.splice(idx, 1);
+        renderPreviewList();
+      }
+    }
+
+    function confirmApplyPreview() {
+      if (!editingQuizBank || editingQuizBank.length === 0) {
+        alert('題庫目前沒有任何題目，無法套用！');
+        return;
+      }
+      quizBank = JSON.parse(JSON.stringify(editingQuizBank));
       currentQIndex = 0;
       localStorage.setItem('puti_buzzer_quiz', JSON.stringify(quizBank));
       renderQuestion();
       if (currentMode === 'self') renderSelfProgressUI();
       broadcastState();
       closeBankModal();
-      alert('🎉 成功辨識並匯入 ' + parsed.length + ' 道題目！全班手機已同步更新題庫！');
+      alert('🎉 題庫成功套用！全班手機已同步更新 ' + quizBank.length + ' 道題目！');
+    }
+
+    function generateAIPromptText() {
+      var topicInput = document.getElementById('ai-topic-input');
+      var countSelect = document.getElementById('ai-count-select');
+      var diffSelect = document.getElementById('ai-diff-select');
+      var preview = document.getElementById('ai-prompt-preview');
+      if (!preview) return;
+
+      var topic = (topicInput && topicInput.value.trim()) ? topicInput.value.trim() : '國小五年級自然：太陽與四季變換';
+      var count = countSelect ? countSelect.value : '5';
+      var diff = diffSelect ? diffSelect.value : '適中';
+
+      var prompt = '你是一位專業的國小/國中教學命題專家。請針對教學單元主題「' + topic + '」，設計 ' + count + ' 題適合課堂互動搶答與即時形成性評量的四選一單選題。\n' +
+        '難易度：' + diff + '。\n\n' +
+        '【輸出要求】：請嚴格依照以下格式輸出，不要有任何客套開場白或說明結語，方便直接複製匯入系統：\n\n' +
+        '1. (正解代碼) 題目文字\n' +
+        '(A) 選項內容 (B) 選項內容 (C) 選項內容 (D) 選項內容\n' +
+        '解析：簡明扼要說明正確理由\n\n' +
+        '2. (正解代碼) 題目文字\n' +
+        '(A) 選項內容 (B) 選項內容 (C) 選項內容 (D) 選項內容\n' +
+        '解析：簡明扼要說明正確理由';
+
+      preview.value = prompt;
+    }
+
+    function copyAIPrompt() {
+      var preview = document.getElementById('ai-prompt-preview');
+      if (!preview) return;
+      preview.select();
+      navigator.clipboard.writeText(preview.value).then(function() {
+        alert('📋 AI 出題提示詞已成功複製到剪貼簿！\n\n請直接開啟 ChatGPT、Claude 或 Google Gemini 貼上送出，生成後將內容貼回本系統「考卷貼上」頁籤即可！');
+      }).catch(function() {
+        alert('請手動選取方框內的文字進行複製');
+      });
     }
 
     function loadSampleQuiz(id) {
       quizBank = sampleBanks[id] || sampleBanks[1];
+      editingQuizBank = JSON.parse(JSON.stringify(quizBank));
       currentQIndex = 0;
       localStorage.setItem('puti_buzzer_quiz', JSON.stringify(quizBank));
       renderQuestion();
       if (currentMode === 'self') renderSelfProgressUI();
       broadcastState();
-      closeBankModal();
+      renderPreviewList();
+      switchBankTab('preview');
       alert('範例題庫載入成功！全班手機已同步更新題庫！');
     }
 
