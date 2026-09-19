@@ -59,7 +59,7 @@
     header {
       background: #FFFFFF;
       border-bottom: 2px solid #EFEAE3;
-      padding: 12px 24px;
+      padding: 12px 20px;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -67,6 +67,8 @@
       top: 0;
       z-index: 100;
       box-shadow: var(--shadow-sm);
+      gap: 12px;
+      flex-wrap: wrap;
     }
 
     .brand {
@@ -77,21 +79,21 @@
     }
 
     .brand-logo {
-      width: 44px;
-      height: 44px;
+      width: 42px;
+      height: 42px;
       background: linear-gradient(135deg, var(--color-primary), var(--color-yellow));
       border-radius: 14px;
       display: flex;
       align-items: center;
       justify-content: center;
       color: white;
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 900;
       box-shadow: 0 4px 10px rgba(224, 122, 95, 0.3);
     }
 
     .brand-title {
-      font-size: 20px;
+      font-size: 19px;
       font-weight: 900;
       letter-spacing: 0.5px;
       color: var(--color-dark);
@@ -106,13 +108,14 @@
     .header-actions {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
+      flex-wrap: wrap;
     }
 
     .conn-status {
       font-size: 12px;
       font-weight: 700;
-      padding: 4px 10px;
+      padding: 4px 12px;
       border-radius: 999px;
       display: inline-flex;
       align-items: center;
@@ -124,20 +127,21 @@
 
     .room-badge {
       background: #F4EFEB;
-      padding: 8px 16px;
+      padding: 6px 14px;
       border-radius: 999px;
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 700;
       color: var(--color-dark);
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
 
     .room-badge .pin {
       color: var(--color-primary);
-      font-size: 18px;
+      font-size: 17px;
       letter-spacing: 1px;
+      font-weight: 900;
     }
 
     .online-count-badge {
@@ -186,7 +190,7 @@
       cursor: pointer;
       font-weight: 700;
       border-radius: 14px;
-      padding: 10px 20px;
+      padding: 10px 18px;
       font-size: 15px;
       display: inline-flex;
       align-items: center;
@@ -606,7 +610,7 @@
       height: 100%;
       flex: 1;
       justify-content: center;
-      gap: 20px;
+      gap: 16px;
     }
 
     /* 學生姓名填寫卡片 */
@@ -619,7 +623,7 @@
       border: 2px solid #EFEAE3;
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 18px;
     }
 
     .student-login-card input {
@@ -819,11 +823,12 @@
     <!-- 老師端顯示房號與人數 -->
     <div class="header-actions" id="host-header-actions">
       <div class="conn-status conn-connecting" id="host-conn-status">
-        <i class="fa-solid fa-circle-notch fa-spin"></i> 伺服器連線中...
+        <i class="fa-solid fa-circle-notch fa-spin"></i> 連線中...
       </div>
       <div class="room-badge">
         <span>房間 PIN</span>
         <span class="pin" id="room-pin">載入中...</span>
+        <button class="btn btn-outline" style="padding: 2px 8px; font-size: 12px; margin-left: 4px;" onclick="changeRoomPin()" title="產生新房號">換新房</button>
       </div>
       <div class="online-count-badge">
         <span class="online-dot"></span>
@@ -839,8 +844,14 @@
         <i class="fa-solid fa-circle-notch fa-spin"></i> 連線中
       </div>
       <div class="room-badge">
-        <i class="fa-solid fa-user-graduate"></i>
-        <span id="my-display-name">同學</span>
+        <span>房號</span>
+        <span class="pin" id="student-room-display">...</span>
+        <span onclick="manualChangeRoom()" style="cursor:pointer; font-size:11px; text-decoration:underline; color:var(--text-muted); margin-left:4px;">換房</span>
+      </div>
+      <div class="room-badge" style="cursor:pointer; background:#FFF3E0;" onclick="openChangeNameModal()" title="點此修改暱稱">
+        <i class="fa-solid fa-user-pen" style="color:var(--color-primary);"></i>
+        <span id="my-display-name" style="font-weight:900;">...</span>
+        <span style="font-size:11px; color:var(--color-primary);">[改名]</span>
       </div>
     </div>
   </header>
@@ -921,7 +932,7 @@
             <div class="buzzer-status-text" id="buzzer-status-label">等待老師啟動搶答...</div>
             <div class="buzzer-winner-card" id="buzzer-winner-card">
               <div style="font-size: 16px; font-weight: 900; color: #E07A5F;">🎉 搶得第一答題權！</div>
-              <div class="buzzer-winner-name" id="buzzer-winner-name">王小明</div>
+              <div class="buzzer-winner-name" id="buzzer-winner-name">同學</div>
               <div class="buzzer-winner-time" id="buzzer-winner-time">+0.24 秒</div>
               <div style="display: flex; gap: 10px; margin-top: 10px;">
                 <button class="btn btn-secondary" onclick="awardBuzzerScore(true)"><i class="fa-solid fa-check"></i> 答對 (+10)</button>
@@ -967,7 +978,7 @@
             </div>
             <div class="student-list" id="student-list-box">
               <div style="text-align: center; color: var(--text-muted); font-size: 13px; margin-top: 30px;">
-                等待同學掃碼加入...
+                等待同學加入...
               </div>
             </div>
           </div>
@@ -979,12 +990,17 @@
     <!-- 學生端作答視圖 (Student Client) -->
     <div id="student-view">
       
-      <!-- 學生加入填寫姓名畫面 -->
+      <!-- 學生加入填寫姓名畫面 (首次進入) -->
       <div id="student-join-screen" class="student-login-card">
         <div class="brand-logo" style="margin: 0 auto;"><i class="fa-solid fa-hand"></i></div>
         <h2 style="font-size: 24px; font-weight: 900; color: var(--color-dark);">加入課堂搶答</h2>
-        <div style="font-size: 15px; color: var(--text-muted);">請輸入你的座號或姓名：</div>
-        <input type="text" id="student-name-input" placeholder="例如：7號小明" maxlength="12">
+        <div style="font-size: 14px; color: var(--text-muted);">
+          當前加入房間：<strong style="color:var(--color-primary);" id="join-screen-pin">...</strong>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:8px; text-align:left;">
+          <label style="font-size: 14px; font-weight:700; color:var(--color-dark);">請自訂你的座號或姓名：</label>
+          <input type="text" id="student-name-input" placeholder="例如：12號王小明、小貓咪" maxlength="12">
+        </div>
         <button class="btn btn-primary" style="font-size: 18px; padding: 14px;" onclick="confirmStudentJoin()">
           <i class="fa-solid fa-right-to-bracket"></i> 進入課堂
         </button>
@@ -992,14 +1008,14 @@
 
       <!-- 模式 1 / 3 答題按鈕 -->
       <div id="student-choice-box" style="display:none; flex-direction:column; gap:16px;">
-        <div style="text-align:center; font-size: 20px; font-weight:900; color:var(--color-dark);" id="student-q-title">請看大螢幕選答</div>
+        <div style="text-align:center; font-size: 18px; font-weight:900; color:var(--color-dark);" id="student-q-title">請看大螢幕選答</div>
         <div class="student-options">
           <button class="student-opt-btn s-opt-a" onclick="submitStudentChoice('A')">A</button>
           <button class="student-opt-btn s-opt-b" onclick="submitStudentChoice('B')">B</button>
           <button class="student-opt-btn s-opt-c" onclick="submitStudentChoice('C')">C</button>
           <button class="student-opt-btn s-opt-d" onclick="submitStudentChoice('D')">D</button>
         </div>
-        <div style="text-align:center; font-size: 15px; font-weight:700; color:var(--text-muted);" id="student-vote-hint">點選後可隨時更換</div>
+        <div style="text-align:center; font-size: 14px; font-weight:700; color:var(--text-muted);" id="student-vote-hint">點選後可隨時更換</div>
       </div>
 
       <!-- 模式 2 巨大搶答器按鈕 -->
@@ -1025,6 +1041,20 @@
 
     </div>
   </main>
+
+  <!-- 修改暱稱燈箱 -->
+  <div class="modal-overlay" id="change-name-modal">
+    <div class="modal-card" style="max-width:380px; text-align:center;">
+      <div class="modal-header">
+        <div class="modal-title">修改你的暱稱</div>
+        <button class="btn btn-outline" onclick="closeChangeNameModal()"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" style="gap:16px;">
+        <input type="text" id="edit-name-input" style="font-family:inherit; font-size:18px; font-weight:700; text-align:center; padding:12px; border-radius:14px; border:2px solid #E2DCD5; outline:none;" maxlength="12">
+        <button class="btn btn-primary" onclick="saveNewName()"><i class="fa-solid fa-check"></i> 確認修改</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 題庫管理燈箱 (Modal) -->
   <div class="modal-overlay" id="bank-modal">
@@ -1094,7 +1124,7 @@ D. 氫氣
 
   <script>
     /* ============================================================
-       1. 音效引擎 (Web Audio API 合成，免載外連 mp3，零失敗率)
+       1. 音效引擎 (Web Audio API 合成)
        ============================================================ */
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playTone(freq, type = 'sine', duration = 0.15, gainVal = 0.2) {
@@ -1256,18 +1286,20 @@ D. 氫氣
     }
 
     /* ============================================================
-       3. 萬無一失通訊核心：MQTT over WSS (100% 穿透防火牆與 4G)
+       3. 萬無一失通訊核心：MQTT over WSS (雙向握手心跳)
        ============================================================ */
     const urlParams = new URLSearchParams(window.location.search);
     const roomParam = urlParams.get('room');
     const isStudent = Boolean(roomParam);
 
     let mqttClient = null;
-    let myRoomId = roomParam || '';
-    let myStudentId = 's_' + Math.random().toString(36).substr(2, 9);
+    let myRoomId = (roomParam || '').toUpperCase();
+    let myStudentId = localStorage.getItem('puti_student_uuid') || ('stu_' + Math.random().toString(36).substr(2, 9));
+    localStorage.setItem('puti_student_uuid', myStudentId);
+
     let myName = localStorage.getItem('puti_student_name') || '';
 
-    // 公共免費 WSS Broker (支援任意網段、手機 4G、校園 Wi-Fi)
+    // 公共 MQTT Broker
     const MQTT_BROKER = 'wss://broker.emqx.io:8084/mqtt';
 
     if (!isStudent) {
@@ -1282,11 +1314,13 @@ D. 氫氣
       document.getElementById('host-header-actions').style.display = 'flex';
       document.getElementById('student-header-actions').style.display = 'none';
 
-      // 產生固定或隨機 4 碼 PIN
-      const savedPin = sessionStorage.getItem('puti_host_pin');
-      const randomPin = savedPin || Math.floor(1000 + Math.random() * 9000).toString();
-      sessionStorage.setItem('puti_host_pin', randomPin);
-      myRoomId = 'PUTI' + randomPin;
+      // 老師房號持久化，重整不會變更，保證 QR Code 永久有效
+      let savedPin = localStorage.getItem('puti_active_pin');
+      if (!savedPin) {
+        savedPin = Math.floor(1000 + Math.random() * 9000).toString();
+        localStorage.setItem('puti_active_pin', savedPin);
+      }
+      myRoomId = 'PUTI' + savedPin;
 
       document.getElementById('room-pin').textContent = myRoomId;
       document.getElementById('big-pin').textContent = myRoomId;
@@ -1294,21 +1328,33 @@ D. 氫氣
       generateQRCodes();
       renderQuestion();
 
-      // 連接 MQTT
+      connectTeacherMQTT();
+    }
+
+    function changeRoomPin() {
+      if (confirm('確定要產生新房號嗎？產生後學生需要重新掃描新的 QR Code！')) {
+        const newPin = Math.floor(1000 + Math.random() * 9000).toString();
+        localStorage.setItem('puti_active_pin', newPin);
+        location.reload();
+      }
+    }
+
+    function connectTeacherMQTT() {
       const hostTopic = `puti/quiz/${myRoomId}/to_host`;
-      const studentTopic = `puti/quiz/${myRoomId}/to_students`;
+      const statusEl = document.getElementById('host-conn-status');
 
       mqttClient = mqtt.connect(MQTT_BROKER, {
         clientId: 'host_' + Math.random().toString(16).substr(2, 8),
-        clean: true
+        clean: true,
+        reconnectPeriod: 2000
       });
-
-      const statusEl = document.getElementById('host-conn-status');
 
       mqttClient.on('connect', () => {
         statusEl.className = 'conn-status conn-online';
         statusEl.innerHTML = '<i class="fa-solid fa-circle-check"></i> 伺服器已就緒';
         mqttClient.subscribe(hostTopic);
+        // 廣播一次目前狀態給可能已連線的學生
+        broadcastState();
       });
 
       mqttClient.on('reconnect', () => {
@@ -1362,29 +1408,50 @@ D. 氫氣
       }
     }
 
+    function broadcastState() {
+      broadcast({
+        type: 'SYNC_STATE',
+        mode: currentMode,
+        qIndex: currentQIndex,
+        question: quizBank[currentQIndex],
+        quizLength: quizBank.length,
+        buzzerLocked
+      });
+    }
+
     let buzzerLocked = false;
     let buzzerRoundWinner = null;
 
     function handleTeacherReceivedData(data) {
-      if (data.type === 'JOIN') {
+      if (data.type === 'JOIN' || data.type === 'HEARTBEAT') {
+        const isNew = !students[data.studentId];
         students[data.studentId] = {
           id: data.studentId,
-          name: data.name || '同學',
-          score: 0,
-          currentQ: 1,
-          choice: null
+          name: data.name || students[data.studentId]?.name || '同學',
+          score: students[data.studentId]?.score || 0,
+          currentQ: students[data.studentId]?.currentQ || 1,
+          choice: students[data.studentId]?.choice || null,
+          lastSeen: Date.now()
         };
         updateStudentListUI();
-        soundEffects.countdown();
-        // 立即回傳給全體同步資訊
+        if (isNew) soundEffects.countdown();
+
+        // 回應學生確認 (ACK)
         broadcast({
-          type: 'SYNC_STATE',
+          type: 'ACK_JOIN',
+          targetStudentId: data.studentId,
           mode: currentMode,
           qIndex: currentQIndex,
           question: quizBank[currentQIndex],
           quizLength: quizBank.length,
           buzzerLocked
         });
+      }
+      else if (data.type === 'RENAME') {
+        if (students[data.studentId]) {
+          students[data.studentId].name = data.newName;
+          updateStudentListUI();
+        }
       }
       else if (data.type === 'SUBMIT_CHOICE') {
         if (students[data.studentId]) {
@@ -1419,10 +1486,12 @@ D. 氫氣
     }
 
     /* ============================================================
-       4. 學生端核心
+       4. 學生端核心 (支援自由修改暱稱與握手重試)
        ============================================================ */
     let buzzStartTime = 0;
     let selfScore = 0;
+    let handshakeInterval = null;
+    let isJoinedConfirmed = false;
 
     function initStudentClient() {
       document.getElementById('host-view').style.display = 'none';
@@ -1430,14 +1499,16 @@ D. 氫氣
       document.getElementById('host-header-actions').style.display = 'none';
       document.getElementById('student-header-actions').style.display = 'flex';
 
-      // 檢查是否已有暱稱
+      document.getElementById('student-room-display').textContent = myRoomId;
+      document.getElementById('join-screen-pin').textContent = myRoomId;
+
+      // 檢查是否已有自訂暱稱
       if (myName) {
         document.getElementById('student-join-screen').style.display = 'none';
         document.getElementById('my-display-name').textContent = myName;
         connectStudentMQTT();
       } else {
         document.getElementById('student-join-screen').style.display = 'flex';
-        // 預設給一個隨機號碼方便一鍵進入
         const randNum = Math.floor(1 + Math.random() * 35);
         document.getElementById('student-name-input').value = `${randNum}號同學`;
       }
@@ -1445,11 +1516,45 @@ D. 氫氣
 
     function confirmStudentJoin() {
       const input = document.getElementById('student-name-input');
-      myName = input.value.trim() || '好學同學';
+      const val = input.value.trim();
+      myName = val || ('同學' + Math.floor(Math.random()*100));
       localStorage.setItem('puti_student_name', myName);
       document.getElementById('my-display-name').textContent = myName;
       document.getElementById('student-join-screen').style.display = 'none';
       connectStudentMQTT();
+    }
+
+    function openChangeNameModal() {
+      document.getElementById('edit-name-input').value = myName;
+      document.getElementById('change-name-modal').style.display = 'flex';
+    }
+    function closeChangeNameModal() {
+      document.getElementById('change-name-modal').style.display = 'none';
+    }
+    function saveNewName() {
+      const newName = document.getElementById('edit-name-input').value.trim();
+      if (!newName) return;
+      myName = newName;
+      localStorage.setItem('puti_student_name', myName);
+      document.getElementById('my-display-name').textContent = myName;
+      closeChangeNameModal();
+      
+      // 送出更名通知給老師端
+      if (mqttClient && mqttClient.connected) {
+        const hostTopic = `puti/quiz/${myRoomId}/to_host`;
+        mqttClient.publish(hostTopic, JSON.stringify({
+          type: 'RENAME',
+          studentId: myStudentId,
+          newName: myName
+        }));
+      }
+    }
+
+    function manualChangeRoom() {
+      const newPin = prompt('請輸入要加入的房間代碼 (例如 PUTI1234)：', myRoomId);
+      if (newPin && newPin.trim()) {
+        location.href = window.location.pathname + '?room=' + newPin.trim().toUpperCase();
+      }
     }
 
     function connectStudentMQTT() {
@@ -1458,27 +1563,31 @@ D. 氫氣
 
       mqttClient = mqtt.connect(MQTT_BROKER, {
         clientId: 'stu_' + Math.random().toString(16).substr(2, 8),
-        clean: true
+        clean: true,
+        reconnectPeriod: 2000
       });
 
       const statusEl = document.getElementById('student-conn-status');
 
       mqttClient.on('connect', () => {
-        statusEl.className = 'conn-status conn-online';
-        statusEl.innerHTML = '<i class="fa-solid fa-circle-check"></i> 已加入';
+        statusEl.className = 'conn-status conn-connecting';
+        statusEl.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> 連結老師大螢幕...';
         mqttClient.subscribe(studentTopic);
 
-        // 發送 JOIN 請求
-        mqttClient.publish(hostTopic, JSON.stringify({
-          type: 'JOIN',
-          studentId: myStudentId,
-          name: myName
-        }));
+        // 啟動自動握手重試 (直到老師端回應 ACK)
+        sendJoinHeartbeat();
+        if (handshakeInterval) clearInterval(handshakeInterval);
+        handshakeInterval = setInterval(sendJoinHeartbeat, 2500);
       });
 
       mqttClient.on('reconnect', () => {
         statusEl.className = 'conn-status conn-connecting';
         statusEl.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> 重連中';
+      });
+
+      mqttClient.on('offline', () => {
+        statusEl.className = 'conn-status conn-offline';
+        statusEl.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> 斷線';
       });
 
       mqttClient.on('message', (topic, message) => {
@@ -1491,8 +1600,31 @@ D. 氫氣
       });
     }
 
+    function sendJoinHeartbeat() {
+      if (mqttClient && mqttClient.connected) {
+        const hostTopic = `puti/quiz/${myRoomId}/to_host`;
+        mqttClient.publish(hostTopic, JSON.stringify({
+          type: isJoinedConfirmed ? 'HEARTBEAT' : 'JOIN',
+          studentId: myStudentId,
+          name: myName
+        }));
+      }
+    }
+
     function handleStudentReceivedData(data) {
-      if (data.type === 'SYNC_STATE' || data.type === 'CHANGE_MODE') {
+      if (data.type === 'ACK_JOIN') {
+        if (!data.targetStudentId || data.targetStudentId === myStudentId) {
+          isJoinedConfirmed = true;
+          const statusEl = document.getElementById('student-conn-status');
+          statusEl.className = 'conn-status conn-online';
+          statusEl.innerHTML = '<i class="fa-solid fa-circle-check"></i> 已加入課堂';
+          syncStudentMode(data.mode, data.question, data.qIndex, data.quizLength, data.buzzerLocked);
+        }
+      }
+      else if (data.type === 'SYNC_STATE' || data.type === 'CHANGE_MODE') {
+        const statusEl = document.getElementById('student-conn-status');
+        statusEl.className = 'conn-status conn-online';
+        statusEl.innerHTML = '<i class="fa-solid fa-circle-check"></i> 已加入課堂';
         syncStudentMode(data.mode, data.question, data.qIndex, data.quizLength, data.buzzerLocked);
       }
       else if (data.type === 'BUZZER_UNLOCK') {
@@ -1659,15 +1791,7 @@ D. 氫氣
 
       renderVotesBar();
       renderPagination();
-
-      broadcast({
-        type: 'SYNC_STATE',
-        mode: currentMode,
-        qIndex: currentQIndex,
-        question: q,
-        quizLength: quizBank.length,
-        buzzerLocked
-      });
+      broadcastState();
     }
 
     function renderVotesBar() {
@@ -1803,7 +1927,7 @@ D. 氫氣
       document.getElementById('students-badge').textContent = `${count} 人`;
 
       if (count === 0) {
-        list.innerHTML = `<div style="text-align:center; color:var(--text-muted); font-size:13px; margin-top:30px;">等待同學掃碼加入...</div>`;
+        list.innerHTML = `<div style="text-align:center; color:var(--text-muted); font-size:13px; margin-top:30px;">等待同學加入...</div>`;
         return;
       }
 
