@@ -806,6 +806,82 @@
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: translateY(0); }
     }
+
+    /* 自訂非阻塞式 Toast 提示 (徹底杜絕原生 alert 阻塞與自動化卡死) */
+    .toast-container {
+      position: fixed;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10002;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      pointer-events: none;
+      max-width: 90vw;
+      width: auto;
+    }
+
+    .puti-toast {
+      pointer-events: auto;
+      min-width: 280px;
+      max-width: 520px;
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      color: var(--color-dark);
+      padding: 14px 22px;
+      border-radius: 16px;
+      box-shadow: 0 12px 32px rgba(61, 64, 91, 0.18), 0 2px 6px rgba(0, 0, 0, 0.06);
+      border: 1.5px solid rgba(226, 220, 213, 0.85);
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.5;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      animation: toastFadeInDown 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      white-space: pre-line;
+    }
+
+    .puti-toast.toast-success {
+      border-left: 6px solid #48BB78;
+    }
+    .puti-toast.toast-error {
+      border-left: 6px solid #E07A5F;
+    }
+    .puti-toast.toast-info {
+      border-left: 6px solid #3D405B;
+    }
+
+    .puti-toast.toast-fadeout {
+      animation: toastFadeOutUp 0.3s forwards;
+    }
+
+    @keyframes toastFadeInDown {
+      from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @keyframes toastFadeOutUp {
+      from {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+      to {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+      }
+    }
   </style>
 </head>
 <body>
@@ -1301,12 +1377,175 @@
     </div>
   </div>
 
+  <!-- Toast 訊息容器 -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- 自訂通用對話燈箱 (取代原生 confirm/prompt，免除阻塞與自動化卡死) -->
+  <div class="modal-overlay" id="custom-dialog-modal" style="z-index: 10005;">
+    <div class="modal-card" style="max-width: 440px; text-align: center;">
+      <div class="modal-header">
+        <div class="modal-title" id="custom-dialog-title">提示訊息</div>
+        <button class="btn btn-outline" id="custom-dialog-close-btn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" style="padding: 10px 0 16px 0; gap: 16px;">
+        <div id="custom-dialog-message" style="font-size: 16px; line-height: 1.6; color: var(--text-color); white-space: pre-line;"></div>
+        <input type="text" id="custom-dialog-input" class="student-input" style="display: none; width: 100%; text-align: center; font-size: 18px; padding: 10px; margin-top: 6px;" placeholder="">
+        <div style="display: flex; gap: 12px; justify-content: center; margin-top: 10px;">
+          <button class="btn btn-outline" id="custom-dialog-cancel-btn" style="flex: 1; padding: 10px 18px;">取消</button>
+          <button class="btn btn-primary" id="custom-dialog-confirm-btn" style="flex: 1; padding: 10px 18px;">確定</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 頁尾版權宣告 (強制規則) -->
   <footer>
     屏東縣後庄國小黃朝榮老師作品，免費分享，歡迎擴散推廣，嚴禁商用與任何侵權、不尊重著作權的行為，更多 Puti-AI 教學工具 <a href="https://padlet.com/clongwh/puti_ai_tools" target="_blank" rel="noopener">點此前往</a>
   </footer>
 
   <script>
+    /* ============================================================
+       0. 非阻塞通知與自訂對話框 (徹底杜絕原生 alert 阻塞與 AI 自動化卡死)
+       ============================================================ */
+    function showToast(msg, type, duration) {
+      type = type || 'info';
+      duration = duration || 2500;
+      var container = document.getElementById('toast-container');
+      if (!container) return;
+      var toast = document.createElement('div');
+      toast.className = 'puti-toast toast-' + type;
+
+      var text = String(msg || '');
+      var icon = '💡';
+      if (type === 'success' || text.indexOf('🎉') !== -1 || text.indexOf('🏆') !== -1 || text.indexOf('📋') !== -1 || text.indexOf('成功') !== -1) {
+        icon = '✅';
+        toast.className = 'puti-toast toast-success';
+      } else if (type === 'error' || text.indexOf('❌') !== -1 || text.indexOf('失敗') !== -1 || text.indexOf('錯誤') !== -1) {
+        icon = '⚠️';
+        toast.className = 'puti-toast toast-error';
+      }
+
+      var iconSpan = document.createElement('span');
+      iconSpan.style.cssText = 'font-size:20px; flex-shrink:0;';
+      iconSpan.textContent = icon;
+
+      var contentSpan = document.createElement('span');
+      contentSpan.style.cssText = 'flex:1;';
+      contentSpan.textContent = text;
+
+      toast.appendChild(iconSpan);
+      toast.appendChild(contentSpan);
+      container.appendChild(toast);
+
+      var isRemoved = false;
+      function removeToast() {
+        if (isRemoved) return;
+        isRemoved = true;
+        toast.classList.add('toast-fadeout');
+        setTimeout(function() {
+          if (toast.parentNode) toast.parentNode.removeChild(toast);
+        }, 300);
+      }
+
+      toast.onclick = removeToast;
+      setTimeout(removeToast, duration);
+    }
+
+    // 全域攔截覆寫原生 alert，防止瀏覽器阻塞與自動化工具（如 Codex / Computer Use）卡死
+    window.alert = function(msg) {
+      showToast(String(msg), 'info', 3000);
+    };
+
+    function showCustomConfirm(title, message) {
+      return new Promise(function(resolve) {
+        var modal = document.getElementById('custom-dialog-modal');
+        var titleEl = document.getElementById('custom-dialog-title');
+        var msgEl = document.getElementById('custom-dialog-message');
+        var inputEl = document.getElementById('custom-dialog-input');
+        var btnConfirm = document.getElementById('custom-dialog-confirm-btn');
+        var btnCancel = document.getElementById('custom-dialog-cancel-btn');
+        var btnClose = document.getElementById('custom-dialog-close-btn');
+
+        titleEl.textContent = title || '確認操作';
+        msgEl.textContent = message || '';
+        inputEl.style.display = 'none';
+        btnCancel.style.display = 'inline-flex';
+        modal.style.display = 'flex';
+
+        function cleanup() {
+          modal.style.display = 'none';
+          btnConfirm.onclick = null;
+          btnCancel.onclick = null;
+          btnClose.onclick = null;
+        }
+
+        btnConfirm.onclick = function() {
+          cleanup();
+          resolve(true);
+        };
+        btnCancel.onclick = function() {
+          cleanup();
+          resolve(false);
+        };
+        btnClose.onclick = function() {
+          cleanup();
+          resolve(false);
+        };
+      });
+    }
+
+    function showCustomPrompt(title, message, defaultValue) {
+      return new Promise(function(resolve) {
+        var modal = document.getElementById('custom-dialog-modal');
+        var titleEl = document.getElementById('custom-dialog-title');
+        var msgEl = document.getElementById('custom-dialog-message');
+        var inputEl = document.getElementById('custom-dialog-input');
+        var btnConfirm = document.getElementById('custom-dialog-confirm-btn');
+        var btnCancel = document.getElementById('custom-dialog-cancel-btn');
+        var btnClose = document.getElementById('custom-dialog-close-btn');
+
+        titleEl.textContent = title || '請輸入資訊';
+        msgEl.textContent = message || '';
+        inputEl.style.display = 'block';
+        inputEl.value = defaultValue || '';
+        btnCancel.style.display = 'inline-flex';
+        modal.style.display = 'flex';
+        setTimeout(function() { inputEl.focus(); inputEl.select(); }, 80);
+
+        function cleanup() {
+          modal.style.display = 'none';
+          btnConfirm.onclick = null;
+          btnCancel.onclick = null;
+          btnClose.onclick = null;
+          inputEl.onkeydown = null;
+        }
+
+        btnConfirm.onclick = function() {
+          var val = inputEl.value;
+          cleanup();
+          resolve(val);
+        };
+        btnCancel.onclick = function() {
+          cleanup();
+          resolve(null);
+        };
+        btnClose.onclick = function() {
+          cleanup();
+          resolve(null);
+        };
+        inputEl.onkeydown = function(e) {
+          if (e.key === 'Enter') {
+            var val = inputEl.value;
+            cleanup();
+            resolve(val);
+          } else if (e.key === 'Escape') {
+            cleanup();
+            resolve(null);
+          }
+        };
+      });
+    }
+
     /* ============================================================
        0. 全域狀態變數 (頂層提升宣告，杜絕 TDZ 錯誤)
        ============================================================ */
@@ -1691,8 +1930,8 @@
       connectTeacherMQTT();
     }
 
-    function changeRoomPin() {
-      var input = prompt('請輸入自訂房間 PIN 碼，或直接留空按確定隨機換新 6 碼：', '');
+    async function changeRoomPin() {
+      var input = await showCustomPrompt('更換房間 PIN 碼', '請輸入自訂房間 PIN 碼，或直接留空隨機換新 6 碼：', '');
       if (input !== null) {
         var clean = input.trim().replace(/\s+/g, '').toUpperCase();
         myRoomId = clean || generateRandom6DigitPin();
@@ -1710,12 +1949,13 @@
         updateStudentListUI();
         connectTeacherMQTT();
         broadcastState();
-        alert('🎉 已更換至新房間：' + displayPin + '！學生請輸入新 PIN 碼或掃描新 QR Code 加入！');
+        showToast('🎉 已更換至新房間：' + displayPin + '！學生請輸入新 PIN 碼或掃描新 QR Code 加入！', 'success', 3500);
       }
     }
 
-    function resetGameScores() {
-      if (!confirm('確定要將全班同學的分數歸零、並從第 1 題重新開始嗎？\n（同學保持在線，完全不需重新掃碼）')) return;
+    async function resetGameScores() {
+      var ok = await showCustomConfirm('重置全班分數', '確定要將全班同學的分數歸零、並從第 1 題重新開始嗎？\n（同學保持在線，完全不需重新掃碼）');
+      if (!ok) return;
       
       currentQIndex = 0;
       isRevealed = false;
@@ -1739,10 +1979,10 @@
         qIndex: 0,
         question: quizBank[0],
         quizLength: quizBank.length,
-        quizBank: quizBank
+        quizBank: quizBank,
+        buzzerLocked: false
       });
-      soundEffects.celebrate();
-      alert('🎉 全班分數已歸零，重新開始測驗！同學手機已同步回到第 1 題！');
+      showToast('🎉 全班分數已歸零，重新開始測驗！同學手機已同步回到第 1 題！', 'success', 3000);
     }
 
     function connectTeacherMQTT() {
@@ -1950,12 +2190,12 @@
       var studentUrl = window.location.origin + window.location.pathname + '?room=' + pin;
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(studentUrl).then(function() {
-          alert('📋 學生專用網址已複製到剪貼簿！\n\n網址：' + studentUrl + '\n\n💡 請直接貼到電腦教室廣播軟體（如極域/聯想）或電子白板，學生點開免輸入房號，直接輸入座號姓名即可進入！');
+          showToast('📋 學生專用網址已複製到剪貼簿！可直接貼給學生免打房號！', 'success', 3500);
         }).catch(function() {
-          prompt('請複製以下學生專用網址：', studentUrl);
+          showCustomPrompt('複製學生專用網址', '請複製以下學生專用網址：', studentUrl);
         });
       } else {
-        prompt('請複製以下學生專用網址：', studentUrl);
+        showCustomPrompt('複製學生專用網址', '請複製以下學生專用網址：', studentUrl);
       }
     }
 
@@ -1985,7 +2225,7 @@
           mqttClient = null;
         }
         initTeacherHost();
-        alert('🎉 密碼驗證成功！已進入教師大螢幕主控台！');
+        showToast('🎉 密碼驗證成功！已進入教師大螢幕主控台！', 'success', 2500);
       } else {
         var err = document.getElementById('teacher-pwd-err');
         if (err) err.style.display = 'block';
@@ -2001,7 +2241,7 @@
       var pinInput = document.getElementById('student-pin-input');
       var inputPin = pinInput ? pinInput.value.trim().replace(/\s+/g, '').toUpperCase() : '';
       if (!inputPin && !myRoomId) {
-        alert('請先輸入大螢幕上的房間 PIN 碼！');
+        showToast('請先輸入大螢幕上的房間 PIN 碼！', 'error', 2500);
         if (pinInput) pinInput.focus();
         return;
       }
@@ -2044,8 +2284,8 @@
       }
     }
 
-    function manualChangeRoom() {
-      var newPin = prompt('請輸入要加入的房間代碼 (例如 382 916)：', formatPinDisplay(myRoomId));
+    async function manualChangeRoom() {
+      var newPin = await showCustomPrompt('切換房間', '請輸入要加入的房間代碼 (例如 382 916)：', formatPinDisplay(myRoomId));
       if (newPin && newPin.trim()) {
         location.href = window.location.pathname + '?room=' + newPin.trim().replace(/\s+/g, '').toUpperCase();
       }
@@ -2656,7 +2896,7 @@
         currentQIndex++;
         renderQuestion();
       } else {
-        alert('已經是最後一題囉！');
+        showToast('已經是最後一題囉！', 'info');
       }
     }
 
@@ -2775,10 +3015,10 @@
         if (students[buzzerRoundWinner.studentId]) {
           students[buzzerRoundWinner.studentId].score = (students[buzzerRoundWinner.studentId].score || 0) + 10;
         }
-        alert('🏆 已為 ' + buzzerRoundWinner.name + ' 加 10 分！');
+        showToast('🏆 已為 ' + buzzerRoundWinner.name + ' 加 10 分！', 'success', 2200);
       } else {
         soundEffects.wrong();
-        alert('❌ 答錯了！換下一位或重新搶答！');
+        showToast('❌ 答錯了！換下一位或重新搶答！', 'error', 2200);
       }
       updateStudentListUI();
 
@@ -2876,7 +3116,7 @@
        ============================================================ */
     function speakQuestion() {
       if (!('speechSynthesis' in window)) {
-        alert('您的瀏覽器不支援語音合成朗讀');
+        showToast('您的瀏覽器不支援語音合成朗讀', 'error');
         return;
       }
       var q = quizBank[currentQIndex];
@@ -2890,18 +3130,26 @@
     function changeTimeLimit(sec) {
       speedTimeLimit = parseInt(sec, 10) || 15;
       localStorage.setItem('puti_speed_timelimit', speedTimeLimit);
-      if (currentMode !== 'speed') return;
-      if (countdownTimer) {
-        clearInterval(countdownTimer);
-        countdownTimer = null;
-      }
-      isSpeedRoundStarted = false;
       var timerBtn = document.getElementById('timer-btn');
       if (timerBtn) {
         timerBtn.className = 'btn btn-primary';
         timerBtn.innerHTML = '<i class="fa-solid fa-play"></i> 開始答題 (' + speedTimeLimit + 's)';
       }
-      var progressBar = document.getElementById('countdown-progress-bar');
+      var secSelect = document.getElementById('timer-sec-select');
+      if (secSelect) secSelect.value = speedTimeLimit.toString();
+    }
+
+    function resetTimer() {
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+      var timerBtn = document.getElementById('timer-btn');
+      if (timerBtn) {
+        timerBtn.className = 'btn btn-primary';
+        timerBtn.innerHTML = '<i class="fa-solid fa-play"></i> 開始答題 (' + speedTimeLimit + 's)';
+      }
+      isSpeedRoundStarted = false;
       if (progressBar) {
         progressBar.style.transition = 'none';
         progressBar.style.width = '100%';
@@ -2983,7 +3231,7 @@
     function exportResultsCSV() {
       var studentList = Object.values(students);
       if (studentList.length === 0) {
-        alert('目前尚無在線同學資料，無法匯出成績！');
+        showToast('目前尚無在線同學資料，無法匯出成績！', 'error');
         return;
       }
 
@@ -3075,12 +3323,12 @@
     function recognizeAndPreview() {
       var text = document.getElementById('paste-text-input').value;
       if (!text.trim()) {
-        alert('請先在輸入框貼上考卷文字或 Excel 表格內容！');
+        showToast('請先在輸入框貼上考卷文字或 Excel 表格內容！', 'error');
         return;
       }
       var parsed = parsePastedText(text);
       if (parsed.length === 0) {
-        alert('無法辨識題目格式！\n請確認內容包含題號與選項（如 1. 題目 (A)選項1 (B)選項2 答案：A），或直接從 Excel 貼上表格。');
+        showToast('無法辨識題目格式！\n請確認內容包含題號與選項，或直接從 Excel 貼上表格。', 'error', 3500);
         return;
       }
       editingQuizBank = JSON.parse(JSON.stringify(parsed));
@@ -3150,16 +3398,18 @@
       }
     }
 
-    function deletePreviewItem(idx) {
-      if (confirm('確定要刪除第 ' + (idx + 1) + ' 題嗎？')) {
+    async function deletePreviewItem(idx) {
+      var ok = await showCustomConfirm('刪除題目', '確定要刪除第 ' + (idx + 1) + ' 題嗎？');
+      if (ok) {
         editingQuizBank.splice(idx, 1);
         renderPreviewList();
+        showToast('已刪除第 ' + (idx + 1) + ' 題', 'info');
       }
     }
 
     function confirmApplyPreview() {
       if (!editingQuizBank || editingQuizBank.length === 0) {
-        alert('題庫目前沒有任何題目，無法套用！');
+        showToast('題庫目前沒有任何題目，無法套用！', 'error');
         return;
       }
       quizBank = JSON.parse(JSON.stringify(editingQuizBank));
@@ -3169,7 +3419,7 @@
       if (currentMode === 'self') renderSelfProgressUI();
       broadcastState();
       closeBankModal();
-      alert('🎉 題庫成功套用！全班手機已同步更新 ' + quizBank.length + ' 道題目！');
+      showToast('🎉 題庫成功套用！全班手機已同步更新 ' + quizBank.length + ' 道題目！', 'success', 3500);
     }
 
     function generateAIPromptText() {
@@ -3201,9 +3451,9 @@
       if (!preview) return;
       preview.select();
       navigator.clipboard.writeText(preview.value).then(function() {
-        alert('📋 AI 出題提示詞已成功複製到剪貼簿！\n\n請直接開啟 ChatGPT、Claude 或 Google Gemini 貼上送出，生成後將內容貼回本系統「考卷貼上」頁籤即可！');
+        showToast('📋 AI 出題提示詞已成功複製到剪貼簿！可直接貼給 AI 生成題目！', 'success', 3500);
       }).catch(function() {
-        alert('請手動選取方框內的文字進行複製');
+        showToast('請手動選取方框內的文字進行複製', 'info');
       });
     }
 
@@ -3217,7 +3467,7 @@
       broadcastState();
       renderPreviewList();
       switchBankTab('preview');
-      alert('範例題庫載入成功！全班手機已同步更新題庫！');
+      showToast('範例題庫載入成功！全班手機已同步更新題庫！', 'success');
     }
 
     function exportQuizJSON() {
@@ -3244,10 +3494,10 @@
             if (currentMode === 'self') renderSelfProgressUI();
             broadcastState();
             closeBankModal();
-            alert('成功載入 ' + json.length + ' 題題庫！全班手機已同步更新題庫！');
+            showToast('成功載入 ' + json.length + ' 題題庫！全班手機已同步更新題庫！', 'success');
           }
         } catch(err) {
-          alert('檔案格式錯誤，請提供正確的 JSON 格式');
+          showToast('檔案格式錯誤，請提供正確的 JSON 格式', 'error');
         }
       };
       reader.readAsText(file);
