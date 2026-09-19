@@ -892,21 +892,23 @@
             <div class="q-tools" style="display:flex; align-items:center; gap:8px;">
               <button class="btn btn-outline" onclick="speakQuestion()" title="朗讀題目"><i class="fa-solid fa-volume-high"></i></button>
               
-              <!-- 老師調整限時秒數下拉 -->
-              <div style="display:flex; align-items:center; background:#F8F6F0; border:1px solid #E2DCD5; border-radius:12px; padding:2px 8px;" title="調整限時秒數">
-                <i class="fa-solid fa-hourglass-half" style="color:var(--color-primary); font-size:12px; margin-right:4px;"></i>
-                <span style="font-size:11px; font-weight:700; color:var(--text-muted); margin-right:4px;">限時:</span>
-                <select id="timer-sec-select" onchange="changeTimeLimit(this.value)" style="border:none; background:transparent; font-weight:900; font-size:13px; color:var(--color-dark); cursor:pointer; outline:none;">
-                  <option value="10">10 秒</option>
-                  <option value="15" selected>15 秒</option>
-                  <option value="20">20 秒</option>
-                  <option value="30">30 秒</option>
-                  <option value="45">45 秒</option>
-                  <option value="60">60 秒</option>
-                </select>
-              </div>
+              <!-- 模式 3 卡唬專屬：限時秒數下拉與開始答題按鈕 -->
+              <div id="speed-timer-controls" style="display:none; align-items:center; gap:8px;">
+                <div style="display:flex; align-items:center; background:#F8F6F0; border:1px solid #E2DCD5; border-radius:12px; padding:2px 8px;" title="調整限時秒數">
+                  <i class="fa-solid fa-hourglass-half" style="color:var(--color-primary); font-size:12px; margin-right:4px;"></i>
+                  <span style="font-size:11px; font-weight:700; color:var(--text-muted); margin-right:4px;">限時:</span>
+                  <select id="timer-sec-select" onchange="changeTimeLimit(this.value)" style="border:none; background:transparent; font-weight:900; font-size:13px; color:var(--color-dark); cursor:pointer; outline:none;">
+                    <option value="10">10 秒</option>
+                    <option value="15" selected>15 秒</option>
+                    <option value="20">20 秒</option>
+                    <option value="30">30 秒</option>
+                    <option value="45">45 秒</option>
+                    <option value="60">60 秒</option>
+                  </select>
+                </div>
 
-              <button class="btn btn-primary" onclick="toggleTimer()" id="timer-btn" style="font-weight:900;"><i class="fa-solid fa-play"></i> 開始答題 (15s)</button>
+                <button class="btn btn-primary" onclick="toggleTimer()" id="timer-btn" style="font-weight:900;"><i class="fa-solid fa-play"></i> 開始答題 (15s)</button>
+              </div>
             </div>
           </div>
 
@@ -2146,6 +2148,7 @@
         }
       }
       else if (data.type === 'TIMER_END') {
+        if (currentMode !== 'speed') return; // 只有卡唬模式才執行倒數截止鎖定！
         if (studentCountdownTimer) {
           clearInterval(studentCountdownTimer);
           studentCountdownTimer = null;
@@ -2417,17 +2420,19 @@
       renderPagination();
       broadcastState();
 
-      // 若處於模式 3（卡唬），切換題目時重置為「等待老師按開始」狀態
+      // 只有處於模式 3（卡唬），才呈現計時器控制項與倒數進度條；共學與搶答無任何時間限制
       isSpeedRoundStarted = false;
       if (countdownTimer) {
         clearInterval(countdownTimer);
         countdownTimer = null;
       }
+      var speedControls = document.getElementById('speed-timer-controls');
       var barWrap = document.getElementById('countdown-bar-wrap');
       var progressBar = document.getElementById('countdown-progress-bar');
       var timerBtn = document.getElementById('timer-btn');
 
       if (currentMode === 'speed') {
+        if (speedControls) speedControls.style.display = 'flex';
         if (barWrap) barWrap.style.display = 'block';
         if (progressBar) {
           progressBar.style.transition = 'none';
@@ -2438,11 +2443,8 @@
           timerBtn.innerHTML = '<i class="fa-solid fa-play"></i> 開始答題 (' + speedTimeLimit + 's)';
         }
       } else {
+        if (speedControls) speedControls.style.display = 'none';
         if (barWrap) barWrap.style.display = 'none';
-        if (timerBtn) {
-          timerBtn.className = 'btn btn-outline';
-          timerBtn.innerHTML = '<i class="fa-regular fa-clock"></i> 倒數 ' + speedTimeLimit + 's';
-        }
       }
     }
 
@@ -2481,7 +2483,7 @@
       var isBuzzer = (mode === 'buzzer');
       var isChoice = (mode === 'normal' || mode === 'speed');
 
-      // 模式 4 自行闖關時，大螢幕轉為戰況儀表板，隱藏個別題目主幹與下一題跳題按鈕
+      // 模式 4 自學時，大螢幕轉為戰況儀表板，隱藏個別題目主幹與下一題跳題按鈕
       var qHeader = document.querySelector('.question-header');
       if (qHeader) qHeader.style.display = isSelf ? 'none' : 'flex';
       var qTitle = document.getElementById('q-title-text');
@@ -2498,10 +2500,12 @@
         clearInterval(countdownTimer);
         countdownTimer = null;
       }
+      var speedControls = document.getElementById('speed-timer-controls');
       var barWrap = document.getElementById('countdown-bar-wrap');
       var progressBar = document.getElementById('countdown-progress-bar');
       var timerBtn = document.getElementById('timer-btn');
       if (mode === 'speed') {
+        if (speedControls) speedControls.style.display = 'flex';
         if (barWrap) barWrap.style.display = 'block';
         if (progressBar) {
           progressBar.style.transition = 'none';
@@ -2512,11 +2516,8 @@
           timerBtn.innerHTML = '<i class="fa-solid fa-play"></i> 開始答題 (' + speedTimeLimit + 's)';
         }
       } else {
+        if (speedControls) speedControls.style.display = 'none';
         if (barWrap) barWrap.style.display = 'none';
-        if (timerBtn) {
-          timerBtn.className = 'btn btn-outline';
-          timerBtn.innerHTML = '<i class="fa-regular fa-clock"></i> 倒數 ' + speedTimeLimit + 's';
-        }
       }
 
       if (isSelf) renderSelfProgressUI();
@@ -2561,7 +2562,9 @@
           timerBtn.className = 'btn btn-outline';
           timerBtn.innerHTML = '<i class="fa-regular fa-clock"></i> 已揭曉';
         }
-        broadcast({ type: 'TIMER_END' });
+        if (currentMode === 'speed') {
+          broadcast({ type: 'TIMER_END' });
+        }
 
         if (correctBox) correctBox.classList.add('is-correct');
         document.getElementById('explanation-box').style.display = 'block';
@@ -2770,6 +2773,7 @@
     function changeTimeLimit(sec) {
       speedTimeLimit = parseInt(sec, 10) || 15;
       localStorage.setItem('puti_speed_timelimit', speedTimeLimit);
+      if (currentMode !== 'speed') return;
       if (countdownTimer) {
         clearInterval(countdownTimer);
         countdownTimer = null;
@@ -2788,6 +2792,7 @@
     }
 
     function startSpeedTimer() {
+      if (currentMode !== 'speed') return; // 只有卡唬模式才允許倒數計時！
       if (countdownTimer) {
         clearInterval(countdownTimer);
         countdownTimer = null;
@@ -2842,6 +2847,7 @@
     }
 
     function toggleTimer() {
+      if (currentMode !== 'speed') return; // 只有卡唬模式才允許操作倒數計時！
       if (countdownTimer) {
         clearInterval(countdownTimer);
         countdownTimer = null;
