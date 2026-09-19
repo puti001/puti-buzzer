@@ -889,10 +889,30 @@
         <div class="stage-card">
           <div class="question-header">
             <span class="q-number-tag" id="q-index-tag">第 1 / 5 題</span>
-            <div class="q-tools">
+            <div class="q-tools" style="display:flex; align-items:center; gap:8px;">
               <button class="btn btn-outline" onclick="speakQuestion()" title="朗讀題目"><i class="fa-solid fa-volume-high"></i></button>
+              
+              <!-- 老師調整限時秒數下拉 -->
+              <div style="display:flex; align-items:center; background:#F8F6F0; border:1px solid #E2DCD5; border-radius:12px; padding:2px 8px;" title="調整限時秒數">
+                <i class="fa-solid fa-hourglass-half" style="color:var(--color-primary); font-size:12px; margin-right:4px;"></i>
+                <span style="font-size:11px; font-weight:700; color:var(--text-muted); margin-right:4px;">限時:</span>
+                <select id="timer-sec-select" onchange="changeTimeLimit(this.value)" style="border:none; background:transparent; font-weight:900; font-size:13px; color:var(--color-dark); cursor:pointer; outline:none;">
+                  <option value="10">10 秒</option>
+                  <option value="15" selected>15 秒</option>
+                  <option value="20">20 秒</option>
+                  <option value="30">30 秒</option>
+                  <option value="45">45 秒</option>
+                  <option value="60">60 秒</option>
+                </select>
+              </div>
+
               <button class="btn btn-outline" onclick="toggleTimer()" id="timer-btn"><i class="fa-regular fa-clock"></i> 倒數 15s</button>
             </div>
+          </div>
+
+          <!-- Kahoot 式大型倒數進度條 (大螢幕) -->
+          <div id="countdown-bar-wrap" style="width:100%; height:8px; background:#E2DCD5; border-radius:999px; overflow:hidden; margin: 4px 0 10px 0; display:none;">
+            <div id="countdown-progress-bar" style="width:100%; height:100%; background:var(--color-primary); transition:width 1s linear;"></div>
           </div>
 
           <!-- 題目主幹 -->
@@ -1041,7 +1061,18 @@
       </div>
 
       <!-- 模式 1 / 3 答題按鈕 -->
-      <div id="student-choice-box" style="display:none; flex-direction:column; gap:16px;">
+      <div id="student-choice-box" style="display:none; flex-direction:column; gap:12px;">
+        <!-- 學生端同步倒數計時進度條 (模式 3 競速專用) -->
+        <div id="student-timer-wrap" style="display:none; flex-direction:column; gap:4px; background:#FDF3F0; padding:10px 14px; border-radius:14px; border:1px solid #F5CAC3;">
+          <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:900; color:var(--color-primary);">
+            <span>⏱️ 答題倒數</span>
+            <span id="student-timer-sec">15s</span>
+          </div>
+          <div style="width:100%; height:8px; background:#E2DCD5; border-radius:999px; overflow:hidden;">
+            <div id="student-timer-bar" style="width:100%; height:100%; background:var(--color-primary); transition:width 1s linear;"></div>
+          </div>
+        </div>
+
         <div style="text-align:center; font-size: 18px; font-weight:900; color:var(--color-dark);" id="student-q-title">請看大螢幕選答</div>
         <div class="student-options">
           <button class="student-opt-btn s-opt-a" onclick="submitStudentChoice('A')">A</button>
@@ -1184,6 +1215,8 @@ D. 氫氣
     var selfScore = 0;
     var myCurrentScore = 0;
     var countdownTimer = null;
+    var studentCountdownTimer = null;
+    var speedTimeLimit = parseInt(localStorage.getItem('puti_speed_timelimit') || '15', 10);
     var hasScoredThisQuestion = false;
     var currentStudentChoice = null;
 
@@ -1397,6 +1430,11 @@ D. 氫氣
       document.getElementById('big-pin').textContent = myRoomId;
       var sidePin = document.getElementById('side-pin-display');
       if (sidePin) sidePin.textContent = myRoomId;
+
+      var secSelect = document.getElementById('timer-sec-select');
+      if (secSelect) secSelect.value = speedTimeLimit.toString();
+      var timerBtn = document.getElementById('timer-btn');
+      if (timerBtn) timerBtn.innerHTML = '<i class="fa-regular fa-clock"></i> 倒數 ' + speedTimeLimit + 's';
 
       generateQRCodes();
       renderQuestion();
@@ -1860,6 +1898,56 @@ D. 氫氣
           if (badge) badge.textContent = myCurrentScore + ' 分';
         }
       }
+      else if (data.type === 'START_TIMER') {
+        if (currentMode === 'speed') {
+          buzzStartTime = performance.now();
+          var timerWrap = document.getElementById('student-timer-wrap');
+          var timerBar = document.getElementById('student-timer-bar');
+          var timerSec = document.getElementById('student-timer-sec');
+          if (timerWrap) timerWrap.style.display = 'flex';
+          if (timerBar) timerBar.style.width = '100%';
+
+          var sTotal = data.duration || 15;
+          var sLeft = sTotal;
+          if (timerSec) timerSec.textContent = sLeft + 's';
+
+          if (studentCountdownTimer) clearInterval(studentCountdownTimer);
+          studentCountdownTimer = setInterval(function() {
+            sLeft--;
+            if (timerBar) {
+              var pct = Math.max(0, (sLeft / sTotal) * 100);
+              timerBar.style.width = pct + '%';
+            }
+            if (sLeft > 0) {
+              if (timerSec) timerSec.textContent = sLeft + 's';
+            } else {
+              clearInterval(studentCountdownTimer);
+              studentCountdownTimer = null;
+              if (timerSec) timerSec.textContent = '時間到！';
+            }
+          }, 1000);
+        }
+      }
+      else if (data.type === 'TIMER_END') {
+        if (studentCountdownTimer) {
+          clearInterval(studentCountdownTimer);
+          studentCountdownTimer = null;
+        }
+        var timerSec = document.getElementById('student-timer-sec');
+        if (timerSec) timerSec.textContent = '時間到！';
+
+        // 鎖定所有選項按鈕禁止作答
+        document.querySelectorAll('.student-opt-btn').forEach(function(b) {
+          b.disabled = true;
+          b.style.pointerEvents = 'none';
+          b.style.opacity = '0.5';
+        });
+        var hint = document.getElementById('student-vote-hint');
+        if (hint && !currentStudentChoice) {
+          hint.innerHTML = '<span style="color:#C62828; font-weight:900;">⏰ 時間到！已截止作答，等待老師揭曉！</span>';
+        }
+        soundEffects.wrong();
+      }
     }
 
     function syncStudentMode(mode, qData, qIdx, length, bLocked) {
@@ -1880,6 +1968,17 @@ D. 氫氣
         b.style.outline = 'none';
         b.classList.remove('selected');
       });
+
+      var timerWrap = document.getElementById('student-timer-wrap');
+      if (mode === 'speed') {
+        if (timerWrap) timerWrap.style.display = 'flex';
+      } else {
+        if (timerWrap) timerWrap.style.display = 'none';
+        if (studentCountdownTimer) {
+          clearInterval(studentCountdownTimer);
+          studentCountdownTimer = null;
+        }
+      }
 
       if (mode === 'normal' || mode === 'speed') {
         buzzStartTime = performance.now();
@@ -2065,6 +2164,20 @@ D. 氫氣
       renderVotesBar();
       renderPagination();
       broadcastState();
+
+      // 若處於模式 3（限時競速挑戰），切換題目時自動開始倒數計時！
+      if (currentMode === 'speed') {
+        startSpeedTimer();
+      } else {
+        if (countdownTimer) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+        }
+        var barWrap = document.getElementById('countdown-bar-wrap');
+        if (barWrap) barWrap.style.display = 'none';
+        var timerBtn = document.getElementById('timer-btn');
+        if (timerBtn) timerBtn.innerHTML = '<i class="fa-regular fa-clock"></i> 倒數 ' + speedTimeLimit + 's';
+      }
     }
 
     function renderVotesBar() {
@@ -2115,7 +2228,16 @@ D. 氫氣
       document.getElementById('self-stage').style.display = isSelf ? 'flex' : 'none';
 
       if (mode === 'speed') {
-        questionStartTime = performance.now();
+        startSpeedTimer();
+      } else {
+        if (countdownTimer) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+        }
+        var barWrap = document.getElementById('countdown-bar-wrap');
+        if (barWrap) barWrap.style.display = 'none';
+        var timerBtn = document.getElementById('timer-btn');
+        if (timerBtn) timerBtn.innerHTML = '<i class="fa-regular fa-clock"></i> 倒數 ' + speedTimeLimit + 's';
       }
 
       if (isSelf) renderSelfProgressUI();
@@ -2148,6 +2270,13 @@ D. 氫氣
       var q = quizBank[currentQIndex];
       var correctBox = document.getElementById('opt-box-' + q.answer);
       if (isRevealed) {
+        // 揭曉時停止倒數並廣播截止
+        if (countdownTimer) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+        }
+        broadcast({ type: 'TIMER_END' });
+
         if (correctBox) correctBox.classList.add('is-correct');
         document.getElementById('explanation-box').style.display = 'block';
         soundEffects.celebrate();
@@ -2159,12 +2288,14 @@ D. 氫氣
             if (students[sid].choice === q.answer) {
               var addScore = 10;
               if (currentMode === 'speed') {
-                // 模式 3 限時競速：越快選對得分越高 (Kahoot 計分機制)
-                var elapsed = (students[sid].choiceTime || 10000) / 1000;
-                if (elapsed <= 3) addScore = 100;
-                else if (elapsed <= 6) addScore = 80;
-                else if (elapsed <= 10) addScore = 60;
-                else addScore = 40;
+                // 模式 3 限時競速：越快選對得分越高 (Kahoot 式時間百分比加權)
+                var elapsed = (students[sid].choiceTime || (speedTimeLimit * 1000)) / 1000;
+                var ratio = elapsed / speedTimeLimit;
+                if (ratio <= 0.2) addScore = 100;
+                else if (ratio <= 0.4) addScore = 80;
+                else if (ratio <= 0.7) addScore = 60;
+                else if (ratio <= 1.0) addScore = 40;
+                else addScore = 0; // 超時未選或超時不給分
               }
               students[sid].score = (students[sid].score || 0) + addScore;
             }
@@ -2350,18 +2481,48 @@ D. 氫氣
       window.speechSynthesis.speak(utterance);
     }
 
-    function toggleTimer() {
+    function changeTimeLimit(sec) {
+      speedTimeLimit = parseInt(sec, 10) || 15;
+      localStorage.setItem('puti_speed_timelimit', speedTimeLimit);
+      var timerBtn = document.getElementById('timer-btn');
+      if (timerBtn) timerBtn.innerHTML = '<i class="fa-regular fa-clock"></i> 倒數 ' + speedTimeLimit + 's';
+      if (currentMode === 'speed') {
+        startSpeedTimer();
+      }
+    }
+
+    function startSpeedTimer() {
       if (countdownTimer) {
         clearInterval(countdownTimer);
         countdownTimer = null;
-        document.getElementById('timer-btn').innerHTML = '<i class="fa-regular fa-clock"></i> 倒數 15s';
-        return;
       }
-      var sec = 15;
+
+      var barWrap = document.getElementById('countdown-bar-wrap');
+      var progressBar = document.getElementById('countdown-progress-bar');
+      if (barWrap) barWrap.style.display = 'block';
+      if (progressBar) {
+        progressBar.style.transition = 'none';
+        progressBar.style.width = '100%';
+        setTimeout(function(){ progressBar.style.transition = 'width 1s linear'; }, 50);
+      }
+
+      var sec = speedTimeLimit;
+      var totalSec = speedTimeLimit;
       document.getElementById('timer-btn').innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 剩餘 ' + sec + 's';
-      soundEffects.countdown();
+      questionStartTime = performance.now();
+
+      // 廣播給學生端開始倒數
+      broadcast({
+        type: 'START_TIMER',
+        duration: totalSec
+      });
+
       countdownTimer = setInterval(function() {
         sec--;
+        if (progressBar) {
+          var pct = Math.max(0, (sec / totalSec) * 100);
+          progressBar.style.width = pct + '%';
+        }
         if (sec > 0) {
           document.getElementById('timer-btn').innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 剩餘 ' + sec + 's';
           if (sec <= 3) soundEffects.countdown();
@@ -2370,8 +2531,22 @@ D. 氫氣
           countdownTimer = null;
           document.getElementById('timer-btn').innerHTML = '<i class="fa-regular fa-clock"></i> 時間到！';
           soundEffects.wrong();
+          broadcast({ type: 'TIMER_END' });
         }
       }, 1000);
+    }
+
+    function toggleTimer() {
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+        var barWrap = document.getElementById('countdown-bar-wrap');
+        if (barWrap) barWrap.style.display = 'none';
+        document.getElementById('timer-btn').innerHTML = '<i class="fa-regular fa-clock"></i> 倒數 ' + speedTimeLimit + 's';
+        broadcast({ type: 'TIMER_END' });
+        return;
+      }
+      startSpeedTimer();
     }
 
     function exportResultsCSV() {
