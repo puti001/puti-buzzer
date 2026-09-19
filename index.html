@@ -340,7 +340,7 @@
       gap: 16px;
       font-size: 20px;
       font-weight: 700;
-      cursor: pointer;
+      cursor: default;
       transition: all 0.25s ease;
       position: relative;
       overflow: hidden;
@@ -899,25 +899,25 @@
           <!-- 模式 1 / 3 四宮格選項區 -->
           <div id="choice-stage">
             <div class="options-grid">
-              <div class="opt-card opt-a" id="opt-box-A" onclick="manualCheck('A')">
+              <div class="opt-card opt-a" id="opt-box-A">
                 <div class="opt-key">A</div>
                 <div class="opt-text" id="opt-text-A">選項 A</div>
                 <div class="opt-votes-bar" id="opt-bar-A"></div>
                 <div class="opt-vote-count" id="opt-count-A">0 票</div>
               </div>
-              <div class="opt-card opt-b" id="opt-box-B" onclick="manualCheck('B')">
+              <div class="opt-card opt-b" id="opt-box-B">
                 <div class="opt-key">B</div>
                 <div class="opt-text" id="opt-text-B">選項 B</div>
                 <div class="opt-votes-bar" id="opt-bar-B"></div>
                 <div class="opt-vote-count" id="opt-count-B">0 票</div>
               </div>
-              <div class="opt-card opt-c" id="opt-box-C" onclick="manualCheck('C')">
+              <div class="opt-card opt-c" id="opt-box-C">
                 <div class="opt-key">C</div>
                 <div class="opt-text" id="opt-text-C">選項 C</div>
                 <div class="opt-votes-bar" id="opt-bar-C"></div>
                 <div class="opt-vote-count" id="opt-count-C">0 票</div>
               </div>
-              <div class="opt-card opt-d" id="opt-box-D" onclick="manualCheck('D')">
+              <div class="opt-card opt-d" id="opt-box-D">
                 <div class="opt-key">D</div>
                 <div class="opt-text" id="opt-text-D">選項 D</div>
                 <div class="opt-votes-bar" id="opt-bar-D"></div>
@@ -1482,6 +1482,7 @@ D. 氫氣
         }
       }
       else if (data.type === 'SUBMIT_CHOICE') {
+        if (isRevealed) return; // 老師已揭曉答案，禁止改選！
         if (students[data.studentId]) {
           var oldChoice = students[data.studentId].choice;
           if (oldChoice) votes[oldChoice] = Math.max(0, votes[oldChoice] - 1);
@@ -1673,6 +1674,21 @@ D. 氫氣
           if (badge) badge.textContent = myCurrentScore + ' 分';
         }
 
+        // 立即鎖定所有選項按鈕，禁止學生再更動答案
+        document.querySelectorAll('.student-opt-btn').forEach(function(b) {
+          b.disabled = true;
+          b.style.pointerEvents = 'none';
+          b.style.opacity = '0.5';
+        });
+
+        // 高亮正解按鈕
+        var correctKey = (data.answer || '').toLowerCase();
+        var correctBtn = document.querySelector('.s-opt-' + correctKey);
+        if (correctBtn) {
+          correctBtn.style.opacity = '1';
+          correctBtn.style.outline = '5px solid #2E7D32';
+        }
+
         if (currentStudentChoice === data.answer) {
           soundEffects.celebrate();
           if (hint) {
@@ -1707,7 +1723,14 @@ D. 氫氣
       var hint = document.getElementById('student-vote-hint');
       if (hint) hint.textContent = '點選後可隨時更換';
 
-      document.querySelectorAll('.student-opt-btn').forEach(function(b) { b.classList.remove('selected'); });
+      // 重新解鎖所有選項按鈕
+      document.querySelectorAll('.student-opt-btn').forEach(function(b) {
+        b.disabled = false;
+        b.style.pointerEvents = 'auto';
+        b.style.opacity = '1';
+        b.style.outline = 'none';
+        b.classList.remove('selected');
+      });
 
       if (mode === 'normal' || mode === 'speed') {
         document.getElementById('student-choice-box').style.display = 'flex';
@@ -1726,6 +1749,10 @@ D. 氫氣
     }
 
     function submitStudentChoice(choice) {
+      // 若按鈕已被鎖定（已揭曉答案），則不能再作答
+      var anyBtn = document.querySelector('.student-opt-btn');
+      if (anyBtn && anyBtn.disabled) return;
+
       currentStudentChoice = choice;
       soundEffects.countdown();
       document.querySelectorAll('.student-opt-btn').forEach(function(b) { b.classList.remove('selected'); });
