@@ -867,16 +867,16 @@
       
       <!-- 四種模式切換標籤 -->
       <div class="mode-bar">
-        <button class="mode-tab active" data-mode="normal" onclick="switchMode('normal')">
-          <i class="fa-solid fa-comments"></i> 1. 一般互動討論
+        <button class="mode-tab active" data-mode="normal" onclick="switchMode('normal')" title="全員投票討論，無時間限制，看長條圖比例">
+          <i class="fa-solid fa-comments"></i> 1. 全員討論投票
         </button>
-        <button class="mode-tab" data-mode="buzzer" onclick="switchMode('buzzer')">
-          <i class="fa-solid fa-stopwatch-20"></i> 2. 極速搶答按鈕
+        <button class="mode-tab" data-mode="buzzer" onclick="switchMode('buzzer')" title="手機化身發光大搶鈴，最快搶答者口頭回答">
+          <i class="fa-solid fa-stopwatch-20"></i> 2. 蜂鳴極速搶答
         </button>
-        <button class="mode-tab" data-mode="speed" onclick="switchMode('speed')">
-          <i class="fa-solid fa-trophy"></i> 3. 搶答選答挑戰
+        <button class="mode-tab" data-mode="speed" onclick="switchMode('speed')" title="限時15秒，全員ABCD選答，越快答對分數越高">
+          <i class="fa-solid fa-trophy"></i> 3. 限時競速挑戰
         </button>
-        <button class="mode-tab" data-mode="self" onclick="switchMode('self')">
+        <button class="mode-tab" data-mode="self" onclick="switchMode('self')" title="學生在各自手機自主刷題看詳解，大螢幕為全班戰況矩陣">
           <i class="fa-solid fa-person-walking-arrow-right"></i> 4. 自行進度闖關
         </button>
       </div>
@@ -949,16 +949,34 @@
             </button>
           </div>
 
-          <!-- 模式 4 自行進度看板 -->
-          <div id="self-stage" style="display:none; flex-direction:column; gap:14px; min-height: 280px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <h3 style="font-size: 20px; font-weight:900;">全班闖關進度矩陣</h3>
-              <button class="btn btn-secondary" onclick="exportResultsCSV()"><i class="fa-solid fa-file-excel"></i> 匯出成績單 CSV</button>
+          <!-- 模式 4 自行進度看板 (全屏戰況矩陣) -->
+          <div id="self-stage" style="display:none; flex-direction:column; gap:16px; min-height: 380px;">
+            <div style="background:#FDF3F0; border-radius:18px; padding:16px 20px; border:2px solid #F5CAC3; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+              <div>
+                <div style="font-size: 20px; font-weight:900; color:var(--color-primary);">
+                  <i class="fa-solid fa-person-running"></i> 自行進度闖關模式進行中
+                </div>
+                <div style="font-size: 13px; color:var(--text-muted); margin-top:4px;">
+                  💡 同學正在手機/平板自主答題與看詳解；此處為全班即時進度大看板，<strong>無須老師一題一題揭曉</strong>！
+                </div>
+              </div>
+              <div style="display:flex; gap:10px;">
+                <button class="btn btn-secondary" onclick="exportResultsCSV()"><i class="fa-solid fa-file-excel"></i> 匯出成績 CSV</button>
+                <button class="btn btn-outline" style="color:#C62828; border-color:#FFCDD2;" onclick="resetGameScores()"><i class="fa-solid fa-rotate-left"></i> 全班重測歸零</button>
+              </div>
+            </div>
+
+            <!-- Top 3 榮譽頒獎台 -->
+            <div id="self-podium" style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin: 6px 0;"></div>
+
+            <!-- 全班即時進度矩陣清單 -->
+            <div style="font-size: 16px; font-weight:900; color:var(--color-dark); margin-top:4px;">
+              <i class="fa-solid fa-users"></i> 全班即時進度矩陣：
             </div>
             <div id="self-progress-list" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;"></div>
           </div>
 
-          <!-- 底部跳題與操作 -->
+          <!-- 底部跳題與操作 (集體模式 1, 2, 3 使用) -->
           <div class="control-footer">
             <div class="q-pagination" id="q-pagination-bar"></div>
             <div style="display: flex; gap: 8px;">
@@ -1146,6 +1164,9 @@ D. 氫氣
     var handshakeInterval = null;
     var isJoinedConfirmed = false;
     var buzzStartTime = 0;
+    var questionStartTime = 0;
+    var studentSelfQIndex = 0;
+    var studentSelfScore = 0;
     var selfScore = 0;
     var myCurrentScore = 0;
     var countdownTimer = null;
@@ -1489,7 +1510,7 @@ D. 氫氣
     }
 
     function handleTeacherReceivedData(data) {
-      if (data.type === 'JOIN' || data.type === 'HEARTBEAT') {
+      if (data.type === 'JOIN') {
         var isNew = !students[data.studentId];
         students[data.studentId] = {
           id: data.studentId,
@@ -1497,11 +1518,13 @@ D. 氫氣
           score: (students[data.studentId] ? students[data.studentId].score : 0),
           currentQ: (students[data.studentId] ? students[data.studentId].currentQ : 1),
           choice: (students[data.studentId] ? students[data.studentId].choice : null),
+          choiceTime: null,
           lastSeen: Date.now()
         };
         updateStudentListUI();
         if (isNew) soundEffects.countdown();
 
+        // 僅在學生主動加入時回傳一次 ACK_JOIN
         broadcast({
           type: 'ACK_JOIN',
           targetStudentId: data.studentId,
@@ -1512,6 +1535,16 @@ D. 氫氣
           quizBank: quizBank,
           buzzerLocked: buzzerLocked
         });
+      }
+      else if (data.type === 'HEARTBEAT') {
+        // 心跳只更新在線狀態與暱稱，絕不廣播 ACK_JOIN 避免干擾學生自主做題畫面
+        if (students[data.studentId]) {
+          students[data.studentId].lastSeen = Date.now();
+          if (data.name && students[data.studentId].name !== data.name) {
+            students[data.studentId].name = data.name;
+            updateStudentListUI();
+          }
+        }
       }
       else if (data.type === 'RENAME') {
         if (students[data.studentId]) {
@@ -1525,6 +1558,7 @@ D. 氫氣
           var oldChoice = students[data.studentId].choice;
           if (oldChoice) votes[oldChoice] = Math.max(0, votes[oldChoice] - 1);
           students[data.studentId].choice = data.choice;
+          students[data.studentId].choiceTime = data.choiceTime || 10000;
           votes[data.choice] = (votes[data.choice] || 0) + 1;
           renderVotesBar();
           soundEffects.countdown();
@@ -1547,6 +1581,7 @@ D. 氫氣
         if (students[data.studentId]) {
           students[data.studentId].currentQ = data.currentQ;
           students[data.studentId].score = data.score;
+          updateStudentListUI();
           renderSelfProgressUI();
         }
       }
@@ -1691,9 +1726,10 @@ D. 氫氣
         syncStudentMode(data.mode, data.question, data.qIndex, data.quizLength, data.buzzerLocked);
       }
       else if (data.type === 'RESET_GAME') {
+        studentSelfQIndex = 0;
+        studentSelfScore = 0;
         selfScore = 0;
         myCurrentScore = 0;
-        currentQIndex = 0;
         currentStudentChoice = null;
         var badge = document.getElementById('my-score-display');
         if (badge) badge.textContent = '0 分';
@@ -1726,6 +1762,9 @@ D. 氫氣
         }
       }
       else if (data.type === 'REVEAL_ANSWER') {
+        // 自行闖關模式下，由學生自定進度自主看解析，完全不吃老師端的揭曉與分數覆蓋！
+        if (currentMode === 'self') return;
+
         var hint = document.getElementById('student-vote-hint');
         if (data.scores && data.scores[myStudentId] !== undefined) {
           myCurrentScore = data.scores[myStudentId];
@@ -1765,6 +1804,7 @@ D. 氫氣
         }
       }
       else if (data.type === 'UPDATE_SCORES') {
+        if (currentMode === 'self') return;
         if (data.scores && data.scores[myStudentId] !== undefined) {
           myCurrentScore = data.scores[myStudentId];
           var badge = document.getElementById('my-score-display');
@@ -1774,13 +1814,14 @@ D. 氫氣
     }
 
     function syncStudentMode(mode, qData, qIdx, length, bLocked) {
+      currentMode = mode;
       document.getElementById('student-choice-box').style.display = 'none';
       document.getElementById('student-buzzer-box').style.display = 'none';
       document.getElementById('student-self-box').style.display = 'none';
 
       currentStudentChoice = null;
       var hint = document.getElementById('student-vote-hint');
-      if (hint) hint.textContent = '點選後可隨時更換';
+      if (hint) hint.textContent = (mode === 'speed') ? '⚡ 限時競速：越快選對得分越高！' : '點選後可隨時更換';
 
       // 重新解鎖所有選項按鈕
       document.querySelectorAll('.student-opt-btn').forEach(function(b) {
@@ -1792,6 +1833,7 @@ D. 氫氣
       });
 
       if (mode === 'normal' || mode === 'speed') {
+        buzzStartTime = performance.now();
         document.getElementById('student-choice-box').style.display = 'flex';
         document.getElementById('student-q-title').textContent = (qIdx + 1) + '. ' + (qData ? qData.question : '請看大螢幕選答');
       } else if (mode === 'buzzer') {
@@ -1803,18 +1845,16 @@ D. 氫氣
         }
       } else if (mode === 'self') {
         document.getElementById('student-self-box').style.display = 'flex';
-        currentQIndex = 0;
-        selfScore = 0;
         renderStudentSelfQuiz();
       }
     }
 
     function submitStudentChoice(choice) {
-      // 若按鈕已被鎖定（已揭曉答案），則不能再作答
       var anyBtn = document.querySelector('.student-opt-btn');
       if (anyBtn && anyBtn.disabled) return;
 
       currentStudentChoice = choice;
+      var elapsed = performance.now() - buzzStartTime;
       soundEffects.countdown();
       document.querySelectorAll('.student-opt-btn').forEach(function(b) { b.classList.remove('selected'); });
       if (event && event.target) event.target.classList.add('selected');
@@ -1824,7 +1864,8 @@ D. 氫氣
       mqttClient.publish(hostTopic, JSON.stringify({
         type: 'SUBMIT_CHOICE',
         studentId: myStudentId,
-        choice: choice
+        choice: choice,
+        choiceTime: elapsed
       }));
     }
 
@@ -1846,10 +1887,27 @@ D. 氫氣
     }
 
     function renderStudentSelfQuiz() {
-      var q = quizBank[currentQIndex];
+      if (studentSelfQIndex >= quizBank.length) {
+        soundEffects.celebrate();
+        var optContainer = document.getElementById('student-self-options');
+        document.getElementById('student-self-qnum').textContent = '完賽';
+        document.getElementById('student-self-score').textContent = '總分：' + studentSelfScore;
+        document.getElementById('student-self-qtext').innerHTML = '🏆 恭喜完成全部 ' + quizBank.length + ' 道題目！<br><span style="font-size:16px; color:var(--text-muted);">請看大螢幕排行榜！</span>';
+        if (optContainer) {
+          optContainer.innerHTML = '<div style="text-align:center; padding:30px 10px; background:#E8F5E9; border-radius:16px; border:2px solid #A5D6A7;">' +
+            '<div style="font-size:40px; margin-bottom:10px;">🎉</div>' +
+            '<div style="font-size:24px; font-weight:900; color:#2E7D32;">測驗全數完成！</div>' +
+            '<div style="font-size:18px; font-weight:700; color:var(--color-dark); margin-top:8px;">獲得分數：' + studentSelfScore + ' 分</div>' +
+          '</div>';
+        }
+        return;
+      }
+
+      var q = quizBank[studentSelfQIndex];
       if (!q) return;
-      document.getElementById('student-self-qnum').textContent = '第 ' + (currentQIndex + 1) + ' / ' + quizBank.length + ' 題';
-      document.getElementById('student-self-score').textContent = '得分：' + selfScore;
+
+      document.getElementById('student-self-qnum').textContent = '第 ' + (studentSelfQIndex + 1) + ' / ' + quizBank.length + ' 題';
+      document.getElementById('student-self-score').textContent = '得分：' + studentSelfScore;
       document.getElementById('student-self-qtext').textContent = q.question;
 
       var optContainer = document.getElementById('student-self-options');
@@ -1858,43 +1916,59 @@ D. 氫氣
       q.options.forEach(function(opt) {
         var btn = document.createElement('button');
         btn.className = 'btn btn-outline';
-        btn.style.cssText = 'padding:14px; font-size:17px; justify-content:flex-start; text-align:left;';
+        btn.style.cssText = 'padding:14px; font-size:17px; justify-content:flex-start; text-align:left; border-radius:12px; transition:all 0.2s;';
         btn.innerHTML = '<span style="width:28px; height:28px; background:#E2DCD5; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; margin-right:8px; font-weight:900;">' + opt.key + '</span> ' + opt.text;
         
         btn.onclick = function() {
-          if (opt.key === q.answer) {
+          optContainer.querySelectorAll('button').forEach(function(b) { b.disabled = true; });
+
+          var isRight = (opt.key === q.answer);
+          if (isRight) {
             soundEffects.correct();
             btn.style.background = '#E8F5E9';
             btn.style.borderColor = '#2E7D32';
-            selfScore += 20;
+            studentSelfScore += 20;
           } else {
             soundEffects.wrong();
             btn.style.background = '#FFEBEE';
             btn.style.borderColor = '#C62828';
+            // 高亮正解選項
+            optContainer.querySelectorAll('button').forEach(function(b) {
+              if (b.textContent.trim().startsWith(q.answer)) {
+                b.style.background = '#E8F5E9';
+                b.style.borderColor = '#2E7D32';
+                b.style.fontWeight = '900';
+              }
+            });
           }
-          optContainer.querySelectorAll('button').forEach(function(b) { b.disabled = true; });
+
+          // 即時顯示詳解
+          var expBox = document.createElement('div');
+          expBox.style.cssText = 'background:#FDF3F0; border-radius:10px; padding:10px 14px; border:1px solid #F5CAC3; font-size:14px; margin-top:8px; animation:fadeIn 0.3s;';
+          expBox.innerHTML = '<strong>💡 解析：</strong>' + (q.explanation || '暫無解析');
+          optContainer.appendChild(expBox);
+
+          // 更新學生手機頂部得分牌
+          document.getElementById('student-self-score').textContent = '得分：' + studentSelfScore;
+          var myBadge = document.getElementById('my-score-display');
+          if (myBadge) myBadge.textContent = studentSelfScore + ' 分';
+
+          // 向老師端回報進度
+          var hostTopic = 'puti/quiz/' + myRoomId + '/to_host';
+          if (mqttClient && mqttClient.connected) {
+            mqttClient.publish(hostTopic, JSON.stringify({
+              type: 'SELF_PROGRESS',
+              studentId: myStudentId,
+              currentQ: studentSelfQIndex + 1,
+              score: studentSelfScore
+            }));
+          }
+
+          // 延遲 1.8 秒自動前往下一題，讓學生看清楚解析
           setTimeout(function() {
-            var hostTopic = 'puti/quiz/' + myRoomId + '/to_host';
-            if (currentQIndex < quizBank.length - 1) {
-              currentQIndex++;
-              renderStudentSelfQuiz();
-              mqttClient.publish(hostTopic, JSON.stringify({
-                type: 'SELF_PROGRESS',
-                studentId: myStudentId,
-                currentQ: currentQIndex + 1,
-                score: selfScore
-              }));
-            } else {
-              soundEffects.celebrate();
-              optContainer.innerHTML = '<div style="text-align:center; padding:20px; font-size:20px; font-weight:900; color:#2E7D32;">🎉 恭喜完成全部測驗！總得分：' + selfScore + ' 分</div>';
-              mqttClient.publish(hostTopic, JSON.stringify({
-                type: 'SELF_PROGRESS',
-                studentId: myStudentId,
-                currentQ: quizBank.length,
-                score: selfScore
-              }));
-            }
-          }, 1200);
+            studentSelfQIndex++;
+            renderStudentSelfQuiz();
+          }, 1800);
         };
         optContainer.appendChild(btn);
       });
@@ -1975,11 +2049,27 @@ D. 氫氣
         t.classList.toggle('active', t.dataset.mode === mode);
       });
 
-      document.getElementById('choice-stage').style.display = (mode === 'normal' || mode === 'speed') ? 'block' : 'none';
-      document.getElementById('buzzer-stage').style.display = (mode === 'buzzer') ? 'flex' : 'none';
-      document.getElementById('self-stage').style.display = (mode === 'self') ? 'flex' : 'none';
+      var isSelf = (mode === 'self');
+      var isBuzzer = (mode === 'buzzer');
+      var isChoice = (mode === 'normal' || mode === 'speed');
 
-      if (mode === 'self') renderSelfProgressUI();
+      // 模式 4 自行闖關時，大螢幕轉為戰況儀表板，隱藏個別題目主幹與下一題跳題按鈕
+      var qHeader = document.querySelector('.question-header');
+      if (qHeader) qHeader.style.display = isSelf ? 'none' : 'flex';
+      var qTitle = document.getElementById('q-title-text');
+      if (qTitle) qTitle.style.display = isSelf ? 'none' : 'block';
+      var ctrlFooter = document.querySelector('.control-footer');
+      if (ctrlFooter) ctrlFooter.style.display = isSelf ? 'none' : 'flex';
+
+      document.getElementById('choice-stage').style.display = isChoice ? 'block' : 'none';
+      document.getElementById('buzzer-stage').style.display = isBuzzer ? 'flex' : 'none';
+      document.getElementById('self-stage').style.display = isSelf ? 'flex' : 'none';
+
+      if (mode === 'speed') {
+        questionStartTime = performance.now();
+      }
+
+      if (isSelf) renderSelfProgressUI();
 
       broadcast({
         type: 'CHANGE_MODE',
@@ -1988,7 +2078,7 @@ D. 氫氣
         question: quizBank[currentQIndex],
         quizLength: quizBank.length,
         quizBank: quizBank,
-        buzzerLocked: (mode === 'buzzer')
+        buzzerLocked: isBuzzer
       });
     }
 
@@ -2002,6 +2092,9 @@ D. 氫氣
     }
 
     function toggleReveal() {
+      // 自行闖關模式下由學生端自訂進度自主揭曉，無須老師揭曉
+      if (currentMode === 'self') return;
+
       isRevealed = !isRevealed;
       var q = quizBank[currentQIndex];
       var correctBox = document.getElementById('opt-box-' + q.answer);
@@ -2015,7 +2108,16 @@ D. 氫氣
           hasScoredThisQuestion = true;
           Object.keys(students).forEach(function(sid) {
             if (students[sid].choice === q.answer) {
-              students[sid].score = (students[sid].score || 0) + 10;
+              var addScore = 10;
+              if (currentMode === 'speed') {
+                // 模式 3 限時競速：越快選對得分越高 (Kahoot 計分機制)
+                var elapsed = (students[sid].choiceTime || 10000) / 1000;
+                if (elapsed <= 3) addScore = 100;
+                else if (elapsed <= 6) addScore = 80;
+                else if (elapsed <= 10) addScore = 60;
+                else addScore = 40;
+              }
+              students[sid].score = (students[sid].score || 0) + addScore;
             }
           });
           updateStudentListUI();
@@ -2126,24 +2228,58 @@ D. 氫氣
 
     function renderSelfProgressUI() {
       var box = document.getElementById('self-progress-list');
+      var podium = document.getElementById('self-podium');
+      if (!box) return;
       box.innerHTML = '';
+      if (podium) podium.innerHTML = '';
+
       var list = Object.values(students);
       if (list.length === 0) {
-        box.innerHTML = '<div style="color:var(--text-muted); padding:20px;">尚無同學進度數據</div>';
+        box.innerHTML = '<div style="color:var(--text-muted); padding:30px; text-align:center; grid-column:1/-1;">尚無同學進度數據，等待同學作答...</div>';
         return;
       }
+
+      // 依分數高低排序排行榜
+      var sorted = list.slice().sort(function(a, b) {
+        return (b.score || 0) - (a.score || 0);
+      });
+
+      // 渲染 Top 3 頒獎台
+      if (podium && sorted.length > 0) {
+        var medals = ['🥇', '🥈', '🥉'];
+        var colors = ['#FFF8E1', '#ECEFF1', '#EFEBE9'];
+        var borders = ['#FFE082', '#CFD8DC', '#D7CCC8'];
+        var top3 = sorted.slice(0, 3);
+        top3.forEach(function(s, idx) {
+          var pCard = document.createElement('div');
+          pCard.style.cssText = 'background:' + colors[idx] + '; border:2px solid ' + borders[idx] + '; border-radius:14px; padding:10px 18px; text-align:center; min-width:140px;';
+          pCard.innerHTML = '<div style="font-size:24px;">' + medals[idx] + '</div>' +
+            '<div style="font-weight:900; font-size:15px; color:var(--color-dark); margin:2px 0;">' + s.name + '</div>' +
+            '<div style="font-size:13px; font-weight:700; color:#2E7D32;">' + (s.score || 0) + ' 分</div>';
+          podium.appendChild(pCard);
+        });
+      }
+
+      // 渲染全班每位同學的進度卡片
       list.forEach(function(s) {
         var card = document.createElement('div');
-        card.style.cssText = 'background:#F9F6F0; border-radius:14px; padding:14px; border:1px solid #E2DCD5; display:flex; flex-direction:column; gap:6px;';
-        var pct = Math.round((s.currentQ / quizBank.length) * 100);
+        var isFinished = (s.currentQ >= quizBank.length);
+        card.style.cssText = 'background:' + (isFinished ? '#E8F5E9' : '#FFFFFF') + '; border-radius:16px; padding:16px; border:2px solid ' + (isFinished ? '#A5D6A7' : '#E2DCD5') + '; display:flex; flex-direction:column; gap:8px; box-shadow:var(--shadow-sm);';
+        
+        var curQ = Math.min(s.currentQ || 1, quizBank.length);
+        var pct = Math.min(100, Math.round((curQ / quizBank.length) * 100));
+        
         card.innerHTML = 
-          '<div style="display:flex; justify-content:space-between; font-weight:900;">' +
-            '<span>' + s.name + '</span>' +
-            '<span style="color:#2E7D32;">' + s.score + ' 分</span>' +
+          '<div style="display:flex; justify-content:space-between; align-items:center;">' +
+            '<span style="font-weight:900; font-size:16px;">' + s.name + (isFinished ? ' <span style="font-size:12px; background:#2E7D32; color:white; padding:2px 6px; border-radius:6px;">完賽</span>' : '') + '</span>' +
+            '<span style="color:#2E7D32; font-weight:900; font-size:16px;">' + (s.score || 0) + ' 分</span>' +
           '</div>' +
-          '<div style="font-size:12px; color:var(--text-muted);">進度：第 ' + s.currentQ + ' / ' + quizBank.length + ' 題 (' + pct + '%)</div>' +
-          '<div style="width:100%; height:8px; background:#E2DCD5; border-radius:999px; overflow:hidden;">' +
-            '<div style="width:' + pct + '%; height:100%; background:var(--color-secondary); transition:width 0.3s;"></div>' +
+          '<div style="font-size:12px; color:var(--text-muted); display:flex; justify-content:space-between;">' +
+            '<span>進度：第 ' + curQ + ' / ' + quizBank.length + ' 題</span>' +
+            '<span>' + pct + '%</span>' +
+          '</div>' +
+          '<div style="width:100%; height:10px; background:#E2DCD5; border-radius:999px; overflow:hidden;">' +
+            '<div style="width:' + pct + '%; height:100%; background:' + (isFinished ? '#2E7D32' : 'var(--color-primary)') + '; transition:width 0.4s ease;"></div>' +
           '</div>';
         box.appendChild(card);
       });
