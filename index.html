@@ -988,6 +988,7 @@
                 </div>
 
                 <button class="btn btn-primary" onclick="toggleTimer()" id="timer-btn" style="font-weight:900;"><i class="fa-solid fa-play"></i> 開始答題 (15s)</button>
+                <button class="btn btn-outline" onclick="toggleBGM()" id="bgm-toggle-btn" title="切換卡唬倒數背景音樂" style="padding: 6px 10px; font-size: 13px; font-weight: 700;"><i class="fa-solid fa-music"></i> 音樂: 開</button>
               </div>
             </div>
           </div>
@@ -1628,6 +1629,186 @@
       }
     };
 
+    // 全域首次點擊/觸摸無感解鎖 AudioContext (徹底破除瀏覽器 Autoplay 阻斷限制)
+    ['click', 'touchstart', 'keydown'].forEach(function(evtName) {
+      window.addEventListener(evtName, function unlockAudio() {
+        var ctx = getAudioCtx();
+        if (ctx && ctx.state === 'suspended') {
+          ctx.resume();
+        }
+        window.removeEventListener(evtName, unlockAudio);
+      }, { once: true });
+    });
+
+    /* ============================================================
+       Kahoot 式緊張倒數背景律動即時合成引擎 (100% 純演算法合成，0 外部檔案，0 延遲)
+       ============================================================ */
+    var isBGMEnabled = (localStorage.getItem('puti_bgm_enabled') !== 'false'); // 預設開啟
+
+    var kahootBGM = {
+      isPlaying: false,
+      timerId: null,
+      beatIndex: 0,
+      currentSec: 15,
+      totalSec: 15,
+
+      start: function(totalSeconds) {
+        if (!isBGMEnabled) return;
+        this.stop();
+        var ctx = getAudioCtx();
+        if (!ctx) return;
+        if (ctx.state === 'suspended') ctx.resume();
+
+        this.isPlaying = true;
+        this.beatIndex = 0;
+        this.totalSec = totalSeconds || 15;
+        this.currentSec = this.totalSec;
+        this.scheduleNextBeat();
+      },
+
+      scheduleNextBeat: function() {
+        if (!this.isPlaying) return;
+
+        var isClimax = (this.currentSec <= 5);
+        // 正常節奏 ~130 BPM (約 460ms 一拍)，最後 5 秒加速雙倍律動 (約 230ms 一拍)
+        var beatInterval = isClimax ? 230 : 460;
+
+        this.playBeat(this.beatIndex, isClimax);
+        this.beatIndex = (this.beatIndex + 1) % 8;
+
+        var self = this;
+        this.timerId = setTimeout(function() {
+          self.scheduleNextBeat();
+        }, beatInterval);
+      },
+
+      playBeat: function(beat, isClimax) {
+        try {
+          var ctx = getAudioCtx();
+          if (!ctx || ctx.state !== 'running') return;
+          var now = ctx.currentTime;
+
+          // 音高隨最後 5 秒每秒遞增 (半音階上升，急迫感飆升)
+          var pitchMultiplier = 1.0;
+          if (isClimax) {
+            var raiseStep = Math.max(0, 5 - this.currentSec);
+            pitchMultiplier = Math.pow(1.05946, raiseStep);
+          }
+
+          // 1. 低音重擊 (Bass Punch)
+          if (beat % 2 === 0 || isClimax) {
+            var oscBass = ctx.createOscillator();
+            var gainBass = ctx.createGain();
+            oscBass.type = 'sine';
+            var startFreq = (beat % 4 === 0 ? 110 : 98) * pitchMultiplier;
+            oscBass.frequency.setValueAtTime(startFreq, now);
+            oscBass.frequency.exponentialRampToValueAtTime(45, now + 0.12);
+
+            gainBass.gain.setValueAtTime(0.26, now);
+            gainBass.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
+
+            oscBass.connect(gainBass);
+            gainBass.connect(ctx.destination);
+            oscBass.start(now);
+            oscBass.stop(now + 0.14);
+          }
+
+          // 2. 時鐘倒數金屬嘀嗒 (Clock Tick)
+          var oscTick = ctx.createOscillator();
+          var gainTick = ctx.createGain();
+          oscTick.type = 'square';
+          oscTick.frequency.setValueAtTime((isClimax ? 2800 : 2200) * pitchMultiplier, now);
+          gainTick.gain.setValueAtTime(isClimax ? 0.08 : 0.04, now);
+          gainTick.gain.exponentialRampToValueAtTime(0.001, now + 0.025);
+
+          oscTick.connect(gainTick);
+          gainTick.connect(ctx.destination);
+          oscTick.start(now);
+          oscTick.stop(now + 0.03);
+
+          // 3. 懸疑律動旋律音 (Synth Stab)
+          var notes = [220, 261.63, 293.66, 329.63, 392, 440]; // A小調五聲音階
+          var noteFreq = notes[beat % notes.length] * pitchMultiplier;
+
+          var oscSynth = ctx.createOscillator();
+          var gainSynth = ctx.createGain();
+          oscSynth.type = 'triangle';
+          oscSynth.frequency.setValueAtTime(noteFreq, now);
+          
+          gainSynth.gain.setValueAtTime(isClimax ? 0.14 : 0.09, now);
+          gainSynth.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+          oscSynth.connect(gainSynth);
+          gainSynth.connect(ctx.destination);
+          oscSynth.start(now);
+          oscSynth.stop(now + 0.16);
+        } catch(e) {}
+      },
+
+      updateRemaining: function(sec) {
+        this.currentSec = sec;
+      },
+
+      stop: function() {
+        this.isPlaying = false;
+        if (this.timerId) {
+          clearTimeout(this.timerId);
+          this.timerId = null;
+        }
+      },
+
+      timeUp: function() {
+        this.stop();
+        if (!isBGMEnabled) return;
+        try {
+          var ctx = getAudioCtx();
+          if (!ctx || ctx.state !== 'running') return;
+          var now = ctx.currentTime;
+          // 時間到：低沈戲劇性重音落定 (Dramatic Drop)
+          var osc = ctx.createOscillator();
+          var gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(140, now);
+          osc.frequency.exponentialRampToValueAtTime(30, now + 0.5);
+          gain.gain.setValueAtTime(0.38, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.6);
+        } catch(e) {}
+      }
+    };
+
+    function toggleBGM() {
+      isBGMEnabled = !isBGMEnabled;
+      localStorage.setItem('puti_bgm_enabled', isBGMEnabled);
+      updateBGMUI();
+      if (!isBGMEnabled) {
+        kahootBGM.stop();
+      } else if (isSpeedRoundStarted && countdownTimer) {
+        kahootBGM.start(speedTimeLimit);
+      }
+      showToast(isBGMEnabled ? '🎵 卡唬背景音樂：已開啟' : '🔇 卡唬背景音樂：已靜音', 'info', 1500);
+    }
+
+    function updateBGMUI() {
+      var btn = document.getElementById('bgm-toggle-btn');
+      if (btn) {
+        if (isBGMEnabled) {
+          btn.style.color = '#2E7D32';
+          btn.style.borderColor = '#A5D6A7';
+          btn.style.background = '#E8F5E9';
+          btn.innerHTML = '<i class="fa-solid fa-music"></i> 音樂: 開';
+        } else {
+          btn.style.color = 'var(--text-muted)';
+          btn.style.borderColor = '#E2DCD5';
+          btn.style.background = '#F8F6F0';
+          btn.innerHTML = '<i class="fa-solid fa-volume-xmark"></i> 音樂: 關';
+        }
+      }
+    }
+
     /* ============================================================
        2. 題庫資料
        ============================================================ */
@@ -1924,6 +2105,7 @@
         timerBtn.className = 'btn btn-primary';
         timerBtn.innerHTML = '<i class="fa-solid fa-play"></i> 開始答題 (' + speedTimeLimit + 's)';
       }
+      updateBGMUI();
 
       generateQRCodes();
       renderQuestion();
@@ -2733,11 +2915,12 @@
        5. 老師端渲染與互動控制
        ============================================================ */
     function renderQuestion() {
-      // 1. 切換題目第一步：徹底銷毀舊題目倒數計時器，重置為未開始
+      // 1. 切換題目第一步：徹底銷毀舊題目倒數計時器與背景音樂，重置為未開始
       if (countdownTimer) {
         clearInterval(countdownTimer);
         countdownTimer = null;
       }
+      kahootBGM.stop();
       isSpeedRoundStarted = false;
 
       var q = quizBank[currentQIndex];
@@ -2857,6 +3040,7 @@
         clearInterval(countdownTimer);
         countdownTimer = null;
       }
+      kahootBGM.stop();
       var speedControls = document.getElementById('speed-timer-controls');
       var barWrap = document.getElementById('countdown-bar-wrap');
       var progressBar = document.getElementById('countdown-progress-bar');
@@ -2913,6 +3097,7 @@
           clearInterval(countdownTimer);
           countdownTimer = null;
         }
+        kahootBGM.stop();
         isSpeedRoundStarted = false;
         var timerBtn = document.getElementById('timer-btn');
         if (timerBtn && currentMode === 'speed') {
@@ -3144,12 +3329,14 @@
         clearInterval(countdownTimer);
         countdownTimer = null;
       }
+      kahootBGM.stop();
       var timerBtn = document.getElementById('timer-btn');
       if (timerBtn) {
         timerBtn.className = 'btn btn-primary';
         timerBtn.innerHTML = '<i class="fa-solid fa-play"></i> 開始答題 (' + speedTimeLimit + 's)';
       }
       isSpeedRoundStarted = false;
+      var progressBar = document.getElementById('countdown-progress-bar');
       if (progressBar) {
         progressBar.style.transition = 'none';
         progressBar.style.width = '100%';
@@ -3163,6 +3350,9 @@
         countdownTimer = null;
       }
       isSpeedRoundStarted = true;
+
+      // 啟動 Kahoot 緊張倒數背景音樂 (使用者點擊合法解鎖 AudioContext)
+      kahootBGM.start(speedTimeLimit);
 
       var barWrap = document.getElementById('countdown-bar-wrap');
       var progressBar = document.getElementById('countdown-progress-bar');
@@ -3190,13 +3380,14 @@
 
       countdownTimer = setInterval(function() {
         sec--;
+        kahootBGM.updateRemaining(sec);
+
         if (progressBar) {
           var pct = Math.max(0, (sec / totalSec) * 100);
           progressBar.style.width = pct + '%';
         }
         if (sec > 0) {
           if (timerBtn) timerBtn.innerHTML = '<i class="fa-solid fa-hourglass-half"></i> 剩餘 ' + sec + 's (暫停)';
-          if (sec <= 3) soundEffects.countdown();
         } else {
           clearInterval(countdownTimer);
           countdownTimer = null;
@@ -3205,6 +3396,7 @@
             timerBtn.className = 'btn btn-outline';
             timerBtn.innerHTML = '<i class="fa-regular fa-clock"></i> 時間到！';
           }
+          kahootBGM.timeUp();
           soundEffects.wrong();
           broadcast({ type: 'TIMER_END' });
         }
@@ -3217,6 +3409,7 @@
         clearInterval(countdownTimer);
         countdownTimer = null;
         isSpeedRoundStarted = false;
+        kahootBGM.stop();
         var timerBtn = document.getElementById('timer-btn');
         if (timerBtn) {
           timerBtn.className = 'btn btn-primary';
