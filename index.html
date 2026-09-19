@@ -2381,6 +2381,13 @@
        5. 老師端渲染與互動控制
        ============================================================ */
     function renderQuestion() {
+      // 1. 切換題目第一步：徹底銷毀舊題目倒數計時器，重置為未開始
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+      }
+      isSpeedRoundStarted = false;
+
       var q = quizBank[currentQIndex];
       if (!q) return;
 
@@ -2393,6 +2400,7 @@
       // 清空同學當前題目的選擇
       Object.keys(students).forEach(function(sid) {
         students[sid].choice = null;
+        students[sid].choiceTime = 0;
       });
 
       document.getElementById('q-index-tag').textContent = '第 ' + (currentQIndex + 1) + ' / ' + quizBank.length + ' 題';
@@ -2416,16 +2424,7 @@
         }
       });
 
-      renderVotesBar();
-      renderPagination();
-      broadcastState();
-
       // 只有處於模式 3（卡唬），才呈現計時器控制項與倒數進度條；共學與搶答無任何時間限制
-      isSpeedRoundStarted = false;
-      if (countdownTimer) {
-        clearInterval(countdownTimer);
-        countdownTimer = null;
-      }
       var speedControls = document.getElementById('speed-timer-controls');
       var barWrap = document.getElementById('countdown-bar-wrap');
       var progressBar = document.getElementById('countdown-progress-bar');
@@ -2446,6 +2445,12 @@
         if (speedControls) speedControls.style.display = 'none';
         if (barWrap) barWrap.style.display = 'none';
       }
+
+      renderVotesBar();
+      renderPagination();
+
+      // 在所有狀態清理與 UI 重置完成後，才向全班廣播最新狀態
+      broadcastState();
     }
 
     function renderVotesBar() {
@@ -2864,18 +2869,63 @@
     }
 
     function exportResultsCSV() {
-      var csvContent = "\uFEFF座號姓名,當前題號,測驗得分\n";
-      Object.values(students).forEach(function(s) {
-        csvContent += '"' + s.name + '",' + s.currentQ + ',' + s.score + '\n';
+      var studentList = Object.values(students);
+      if (studentList.length === 0) {
+        alert('目前尚無在線同學資料，無法匯出成績！');
+        return;
+      }
+
+      // 標準 UTF-8 BOM 避免 Excel 開啟時中文亂碼
+      // 欄位標題：座號,姓名,完整暱稱,當前題號,測驗得分,完賽狀態
+      var csvContent = "\uFEFF座號,姓名,完整暱稱,當前題號,測驗得分,完賽狀態\n";
+      studentList.forEach(function(s) {
+        var rawName = (s.name || '').trim();
+        var seatNo = '';
+        var realName = rawName;
+
+        // 智慧提取開頭座號：例如 "1號 王小明"、"05李小美"、"12. 陳大文"
+        var seatMatch = rawName.match(/^([0-9]{1,2})\s*號?[\s、\._]*(.*)$/);
+        if (seatMatch) {
+          seatNo = seatMatch[1];
+          realName = seatMatch[2] || seatMatch[1];
+        }
+
+        var curQ = s.currentQ || (currentMode === 'self' ? 0 : (currentQIndex + 1));
+        var totalQ = quizBank.length;
+        var isFinished = (curQ >= totalQ) ? '已完賽' : '測驗中';
+        var score = (s.score !== undefined) ? s.score : 0;
+
+        csvContent += '"' + seatNo + '","' + realName.replace(/"/g, '""') + '","' + rawName.replace(/"/g, '""') + '",' + curQ + ',' + score + ',"' + isFinished + '"\n';
       });
+
       var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      var url = URL.createObjectURL(blob);
-      var link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute("download", 'Puti-AI_課堂測驗成果_' + new Date().toISOString().slice(0,10) + '.csv');
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      var fileName = 'Puti-AI_課堂測驗成果_' + new Date().toISOString().slice(0, 10) + '.csv';
+
+      if (window.navigator && window.navigator.msSaveOrOpenBlob) {
+        window.navigator.msSaveOrOpenBlob(blob, fileName);
+      } else {
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.style.display = 'none';
+        link.href = url;
+        link.setAttribute('download', fileName);
+        document.body.appendChild(link);
+
+        // 使用標準 MouseEvent 點擊，確保自動化測試 (Puppeteer/Playwright/Headless Chrome) 與各瀏覽器均能精確捕獲下載
+        try {
+          var clickEvt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+          link.dispatchEvent(clickEvt);
+        } catch(err) {
+          link.click();
+        }
+
+        setTimeout(function() {
+          if (document.body.contains(link)) {
+            document.body.removeChild(link);
+          }
+          URL.revokeObjectURL(url);
+        }, 300);
+      }
     }
 
     var editingQuizBank = [];
