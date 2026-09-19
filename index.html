@@ -1,0 +1,1905 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Puti-AI | 課堂搶答器與互動測驗系統</title>
+  <!-- Google Fonts: Zen Maru Gothic -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <!-- QRCode.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- PeerJS -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <!-- Canvas Confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+
+  <style>
+    :root {
+      --font-main: 'Zen Maru Gothic', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --bg-main: #FBF8F3;
+      --bg-card: #FFFFFF;
+      --text-main: #2D2724;
+      --text-muted: #7A726D;
+      --color-primary: #E07A5F;   /* 暖磚紅 */
+      --color-secondary: #81B29A; /* 鼠尾草綠 */
+      --color-yellow: #F2CC8F;    /* 暖杏黃 */
+      --color-dark: #3D405B;      /* 柔靛青 */
+      --color-accent: #E76F51;
+      --color-correct: #588157;
+      --color-wrong: #D90429;
+      --border-radius: 20px;
+      --shadow-sm: 0 4px 12px rgba(0,0,0,0.06);
+      --shadow-md: 0 8px 24px rgba(0,0,0,0.08);
+      --shadow-lg: 0 16px 36px rgba(0,0,0,0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    body {
+      font-family: var(--font-main);
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* 頂部導覽列 */
+    header {
+      background: #FFFFFF;
+      border-bottom: 2px solid #EFEAE3;
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+    }
+
+    .brand-logo {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, var(--color-primary), var(--color-yellow));
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 24px;
+      font-weight: 900;
+      box-shadow: 0 4px 10px rgba(224, 122, 95, 0.3);
+    }
+
+    .brand-title {
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: 0.5px;
+      color: var(--color-dark);
+    }
+
+    .brand-subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 700;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .room-badge {
+      background: #F4EFEB;
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--color-dark);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .room-badge .pin {
+      color: var(--color-primary);
+      font-size: 18px;
+      letter-spacing: 1px;
+    }
+
+    .online-count-badge {
+      background: #E8F5E9;
+      color: #2E7D32;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .online-dot {
+      width: 8px;
+      height: 8px;
+      background: #4CAF50;
+      border-radius: 50%;
+      animation: pulse 1.8s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.9); opacity: 0.7; }
+      50% { transform: scale(1.3); opacity: 1; }
+      100% { transform: scale(0.9); opacity: 0.7; }
+    }
+
+    /* 主要容器 */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      max-width: 1300px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 20px;
+      gap: 20px;
+    }
+
+    /* 按鈕共用樣式 */
+    .btn {
+      font-family: var(--font-main);
+      border: none;
+      outline: none;
+      cursor: pointer;
+      font-weight: 700;
+      border-radius: 14px;
+      padding: 10px 20px;
+      font-size: 15px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+    .btn:active {
+      transform: scale(0.96);
+    }
+    .btn-primary {
+      background: var(--color-primary);
+      color: white;
+      box-shadow: 0 4px 12px rgba(224, 122, 95, 0.35);
+    }
+    .btn-primary:hover {
+      background: #d66c51;
+    }
+    .btn-secondary {
+      background: var(--color-secondary);
+      color: white;
+      box-shadow: 0 4px 12px rgba(129, 178, 154, 0.35);
+    }
+    .btn-dark {
+      background: var(--color-dark);
+      color: white;
+    }
+    .btn-outline {
+      background: white;
+      border: 2px solid #E2DCD5;
+      color: var(--text-main);
+    }
+    .btn-outline:hover {
+      background: #F4EFEB;
+    }
+
+    /* 模式切換標籤列 */
+    .mode-bar {
+      background: white;
+      border-radius: var(--border-radius);
+      padding: 8px;
+      display: flex;
+      gap: 8px;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid #EFEAE3;
+      overflow-x: auto;
+    }
+
+    .mode-tab {
+      flex: 1;
+      padding: 12px 16px;
+      border-radius: 14px;
+      border: none;
+      background: transparent;
+      font-family: var(--font-main);
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      white-space: nowrap;
+      transition: all 0.25s ease;
+    }
+    .mode-tab.active {
+      background: var(--color-dark);
+      color: white;
+      box-shadow: 0 4px 14px rgba(61, 64, 91, 0.25);
+    }
+
+    /* 主畫面切換區 (Host 視圖) */
+    .view-container {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 20px;
+      flex: 1;
+    }
+
+    @media (max-width: 992px) {
+      .view-container {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* 大螢幕主卡片 */
+    .stage-card {
+      background: white;
+      border-radius: var(--border-radius);
+      padding: 30px;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid #EFEAE3;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .question-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .q-number-tag {
+      background: #F4EFEB;
+      padding: 6px 16px;
+      border-radius: 999px;
+      font-size: 16px;
+      font-weight: 900;
+      color: var(--color-primary);
+    }
+
+    .q-tools {
+      display: flex;
+      gap: 8px;
+    }
+
+    .q-title {
+      font-size: 28px;
+      font-weight: 900;
+      line-height: 1.45;
+      color: var(--color-dark);
+      margin-bottom: 30px;
+    }
+
+    /* 2x2 四宮格選項 */
+    .options-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    @media (max-width: 650px) {
+      .options-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .opt-card {
+      border-radius: 18px;
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 20px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      position: relative;
+      overflow: hidden;
+      border: 3px solid transparent;
+    }
+
+    .opt-card .opt-key {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 22px;
+      font-weight: 900;
+      flex-shrink: 0;
+    }
+
+    .opt-card .opt-text {
+      flex: 1;
+      z-index: 2;
+    }
+
+    .opt-card .opt-votes-bar {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.06);
+      width: 0%;
+      transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 1;
+    }
+
+    .opt-card .opt-vote-count {
+      font-size: 16px;
+      font-weight: 900;
+      z-index: 2;
+      background: white;
+      padding: 4px 10px;
+      border-radius: 999px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* 四色 */
+    .opt-a { background: #FDF3F0; color: #9C381E; }
+    .opt-a .opt-key { background: var(--color-primary); }
+    .opt-b { background: #F0F7F4; color: #34634F; }
+    .opt-b .opt-key { background: var(--color-secondary); }
+    .opt-c { background: #FEF9EE; color: #8F6517; }
+    .opt-c .opt-key { background: #E5B25D; }
+    .opt-d { background: #F1F2F6; color: #23253A; }
+    .opt-d .opt-key { background: var(--color-dark); }
+
+    .opt-card.is-correct {
+      border-color: #2E7D32 !important;
+      background: #E8F5E9 !important;
+    }
+    .opt-card.is-correct::after {
+      content: "✓ 正解";
+      position: absolute;
+      right: 16px;
+      top: 12px;
+      background: #2E7D32;
+      color: white;
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-weight: 900;
+      z-index: 3;
+    }
+
+    /* 詳解區域 */
+    .explanation-box {
+      background: #FFF9E6;
+      border-left: 6px solid #F4A261;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-top: 15px;
+      font-size: 16px;
+      line-height: 1.6;
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+
+    /* 搶答專用舞台 (Buzzer Mode Stage) */
+    .buzzer-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 380px;
+      gap: 24px;
+      text-align: center;
+    }
+
+    .buzzer-status-text {
+      font-size: 24px;
+      font-weight: 900;
+      color: var(--text-muted);
+    }
+
+    .buzzer-winner-card {
+      background: linear-gradient(135deg, #FFE8D6, #FFDDD2);
+      border: 3px solid #E07A5F;
+      border-radius: 28px;
+      padding: 30px 48px;
+      box-shadow: var(--shadow-lg);
+      transform: scale(0.9);
+      opacity: 0;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .buzzer-winner-card.show {
+      transform: scale(1);
+      opacity: 1;
+    }
+    .buzzer-winner-name {
+      font-size: 42px;
+      font-weight: 900;
+      color: #9C381E;
+    }
+    .buzzer-winner-time {
+      font-size: 18px;
+      font-weight: 700;
+      color: #7A726D;
+      background: white;
+      padding: 4px 16px;
+      border-radius: 999px;
+    }
+
+    /* 老師主控底部操作列 */
+    .control-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: auto;
+      padding-top: 20px;
+      border-top: 2px solid #EFEAE3;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .q-pagination {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .q-page-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      border: 2px solid #E2DCD5;
+      background: white;
+      font-family: var(--font-main);
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .q-page-btn.active {
+      background: var(--color-primary);
+      border-color: var(--color-primary);
+      color: white;
+      transform: scale(1.1);
+    }
+
+    /* 右側側邊欄 (QR Code / 學生清單 / 排行榜) */
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .qr-card {
+      background: white;
+      border-radius: var(--border-radius);
+      padding: 20px;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid #EFEAE3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .qr-card:hover {
+      transform: translateY(-2px);
+    }
+    #qrcode-box {
+      margin: 12px 0;
+      padding: 10px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+    }
+    .qr-hint {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 700;
+    }
+
+    .students-card {
+      background: white;
+      border-radius: var(--border-radius);
+      padding: 20px;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid #EFEAE3;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      max-height: 480px;
+    }
+
+    .panel-title {
+      font-size: 16px;
+      font-weight: 900;
+      color: var(--color-dark);
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .student-list {
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-right: 4px;
+    }
+
+    .student-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: #F9F6F0;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .student-badge {
+      font-size: 12px;
+      background: #E8F5E9;
+      color: #2E7D32;
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+
+    /* 學生手機端專用介面 (Student View) */
+    #student-view {
+      display: none;
+      flex-direction: column;
+      max-width: 500px;
+      margin: 0 auto;
+      width: 100%;
+      height: 100%;
+      flex: 1;
+      justify-content: center;
+      gap: 20px;
+    }
+
+    /* 搶答大按鈕 */
+    .giant-buzzer-btn {
+      width: 260px;
+      height: 260px;
+      border-radius: 50%;
+      border: 10px solid #FFFFFF;
+      background: linear-gradient(145deg, #E07A5F, #D05B3D);
+      color: white;
+      font-size: 40px;
+      font-weight: 900;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 15px 35px rgba(224, 122, 95, 0.45), inset 0 -6px 12px rgba(0,0,0,0.2);
+      cursor: pointer;
+      margin: 20px auto;
+      transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .giant-buzzer-btn:active {
+      transform: scale(0.92);
+      box-shadow: 0 5px 15px rgba(224, 122, 95, 0.4), inset 0 6px 12px rgba(0,0,0,0.3);
+    }
+    .giant-buzzer-btn.disabled {
+      background: #D5CECE;
+      color: #8C8282;
+      box-shadow: none;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .giant-buzzer-btn.buzzed {
+      background: linear-gradient(145deg, #588157, #3A5A40);
+      animation: pulse 1s infinite;
+    }
+
+    /* 學生手機四選一按鈕 */
+    .student-options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      width: 100%;
+      height: 340px;
+    }
+
+    .student-opt-btn {
+      border-radius: 22px;
+      border: none;
+      font-family: var(--font-main);
+      font-size: 32px;
+      font-weight: 900;
+      color: white;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: transform 0.15s;
+      box-shadow: var(--shadow-sm);
+    }
+    .student-opt-btn:active {
+      transform: scale(0.94);
+    }
+    .s-opt-a { background: var(--color-primary); }
+    .s-opt-b { background: var(--color-secondary); }
+    .s-opt-c { background: #E5B25D; }
+    .s-opt-d { background: var(--color-dark); }
+    .student-opt-btn.selected {
+      border: 6px solid #FFF;
+      box-shadow: 0 0 0 4px var(--color-dark), var(--shadow-md);
+      transform: scale(1.03);
+    }
+
+    /* 題庫編輯燈箱 (Modal) */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-card {
+      background: white;
+      border-radius: var(--border-radius);
+      max-width: 720px;
+      width: 100%;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      padding: 26px;
+      box-shadow: var(--shadow-lg);
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .modal-title {
+      font-size: 22px;
+      font-weight: 900;
+      color: var(--color-dark);
+    }
+    .modal-body {
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .raw-textarea {
+      width: 100%;
+      height: 240px;
+      border: 2px solid #E2DCD5;
+      border-radius: 14px;
+      padding: 14px;
+      font-family: inherit;
+      font-size: 15px;
+      line-height: 1.5;
+      resize: vertical;
+      outline: none;
+    }
+    .raw-textarea:focus {
+      border-color: var(--color-primary);
+    }
+
+    /* 抽籤輪盤燈箱 */
+    #wheel-canvas {
+      width: 280px;
+      height: 280px;
+      border-radius: 50%;
+      margin: 15px auto;
+      box-shadow: var(--shadow-md);
+    }
+
+    /* 頁尾版權宣告 (強制規則) */
+    footer {
+      background: #FFFFFF;
+      border-top: 1px solid #EFEAE3;
+      padding: 16px 20px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    footer a {
+      color: var(--color-primary);
+      text-decoration: none;
+      font-weight: 700;
+    }
+    footer a:hover {
+      text-decoration: underline;
+    }
+
+    /* 動畫 */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 頂部列 -->
+  <header>
+    <div class="brand" onclick="location.reload()">
+      <div class="brand-logo"><i class="fa-solid fa-bolt"></i></div>
+      <div>
+        <div class="brand-title">Puti-AI 課堂搶答器</div>
+        <div class="brand-subtitle">互動測驗 ╳ 毫秒搶答 ╳ 自主闖關</div>
+      </div>
+    </div>
+
+    <!-- 老師端顯示房號與人數 -->
+    <div class="header-actions" id="host-header-actions">
+      <div class="room-badge">
+        <span>房間代碼</span>
+        <span class="pin" id="room-pin">載入中...</span>
+      </div>
+      <div class="online-count-badge">
+        <span class="online-dot"></span>
+        <span id="online-count">0</span> 人在線
+      </div>
+      <button class="btn btn-outline" onclick="openBankModal()"><i class="fa-solid fa-book"></i> 題庫庫存</button>
+      <button class="btn btn-outline" onclick="openWheelModal()"><i class="fa-solid fa-dice"></i> 幸運抽籤</button>
+    </div>
+
+    <!-- 學生端顯示暱稱 -->
+    <div class="header-actions" id="student-header-actions" style="display:none;">
+      <div class="room-badge">
+        <i class="fa-solid fa-user-graduate"></i>
+        <span id="my-display-name">同學</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- 老師端視圖 (Teacher Host) -->
+    <div id="host-view" style="display: flex; flex-direction: column; gap: 20px;">
+      
+      <!-- 四種模式切換標籤 -->
+      <div class="mode-bar">
+        <button class="mode-tab active" data-mode="normal" onclick="switchMode('normal')">
+          <i class="fa-solid fa-comments"></i> 1. 一般互動討論
+        </button>
+        <button class="mode-tab" data-mode="buzzer" onclick="switchMode('buzzer')">
+          <i class="fa-solid fa-stopwatch-20"></i> 2. 極速搶答按鈕
+        </button>
+        <button class="mode-tab" data-mode="speed" onclick="switchMode('speed')">
+          <i class="fa-solid fa-trophy"></i> 3. 搶答選答挑戰
+        </button>
+        <button class="mode-tab" data-mode="self" onclick="switchMode('self')">
+          <i class="fa-solid fa-person-walking-arrow-right"></i> 4. 自行進度闖關
+        </button>
+      </div>
+
+      <!-- 主舞台區 -->
+      <div class="view-container">
+        
+        <!-- 大螢幕出題卡片 -->
+        <div class="stage-card">
+          <div class="question-header">
+            <span class="q-number-tag" id="q-index-tag">第 1 / 5 題</span>
+            <div class="q-tools">
+              <button class="btn btn-outline" onclick="speakQuestion()" title="朗讀題目"><i class="fa-solid fa-volume-high"></i></button>
+              <button class="btn btn-outline" onclick="toggleTimer()" id="timer-btn"><i class="fa-regular fa-clock"></i> 倒數 15s</button>
+            </div>
+          </div>
+
+          <!-- 題目主幹 -->
+          <div class="q-title" id="q-title-text">題目載入中...</div>
+
+          <!-- 模式 1 / 3 四宮格選項區 -->
+          <div id="choice-stage">
+            <div class="options-grid">
+              <div class="opt-card opt-a" id="opt-box-A" onclick="manualCheck('A')">
+                <div class="opt-key">A</div>
+                <div class="opt-text" id="opt-text-A">選項 A</div>
+                <div class="opt-votes-bar" id="opt-bar-A"></div>
+                <div class="opt-vote-count" id="opt-count-A">0 票</div>
+              </div>
+              <div class="opt-card opt-b" id="opt-box-B" onclick="manualCheck('B')">
+                <div class="opt-key">B</div>
+                <div class="opt-text" id="opt-text-B">選項 B</div>
+                <div class="opt-votes-bar" id="opt-bar-B"></div>
+                <div class="opt-vote-count" id="opt-count-B">0 票</div>
+              </div>
+              <div class="opt-card opt-c" id="opt-box-C" onclick="manualCheck('C')">
+                <div class="opt-key">C</div>
+                <div class="opt-text" id="opt-text-C">選項 C</div>
+                <div class="opt-votes-bar" id="opt-bar-C"></div>
+                <div class="opt-vote-count" id="opt-count-C">0 票</div>
+              </div>
+              <div class="opt-card opt-d" id="opt-box-D" onclick="manualCheck('D')">
+                <div class="opt-key">D</div>
+                <div class="opt-text" id="opt-text-D">選項 D</div>
+                <div class="opt-votes-bar" id="opt-bar-D"></div>
+                <div class="opt-vote-count" id="opt-count-D">0 票</div>
+              </div>
+            </div>
+
+            <!-- 詳解卡片 -->
+            <div class="explanation-box" id="explanation-box">
+              <strong>💡 題目解析：</strong><span id="explanation-text"></span>
+            </div>
+          </div>
+
+          <!-- 模式 2 搶答按鈕舞台 -->
+          <div id="buzzer-stage" class="buzzer-stage" style="display:none;">
+            <div class="buzzer-status-text" id="buzzer-status-label">等待老師啟動搶答...</div>
+            <div class="buzzer-winner-card" id="buzzer-winner-card">
+              <div style="font-size: 16px; font-weight: 900; color: #E07A5F;">🎉 搶到答題權</div>
+              <div class="buzzer-winner-name" id="buzzer-winner-name">王小明</div>
+              <div class="buzzer-winner-time" id="buzzer-winner-time">+0.24 秒</div>
+              <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <button class="btn btn-secondary" onclick="awardBuzzerScore(true)"><i class="fa-solid fa-check"></i> 答對 (+10)</button>
+                <button class="btn btn-outline" style="color: var(--color-wrong);" onclick="awardBuzzerScore(false)"><i class="fa-solid fa-xmark"></i> 答錯換人</button>
+              </div>
+            </div>
+            <button class="btn btn-primary" style="font-size: 20px; padding: 16px 36px;" id="start-buzz-btn" onclick="startBuzzerRound()">
+              <i class="fa-solid fa-bolt"></i> 3、2、1 開始搶答！
+            </button>
+          </div>
+
+          <!-- 模式 4 自行進度看板 -->
+          <div id="self-stage" style="display:none; flex-direction:column; gap:14px; min-height: 280px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <h3 style="font-size: 20px; font-weight:900;">全班闖關進度矩陣</h3>
+              <button class="btn btn-secondary" onclick="exportResultsCSV()"><i class="fa-solid fa-file-excel"></i> 匯出成績單 CSV</button>
+            </div>
+            <div id="self-progress-list" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;"></div>
+          </div>
+
+          <!-- 底部跳題與操作 -->
+          <div class="control-footer">
+            <div class="q-pagination" id="q-pagination-bar"></div>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-outline" onclick="toggleReveal()" id="reveal-btn"><i class="fa-regular fa-eye"></i> 揭曉答案</button>
+              <button class="btn btn-primary" onclick="nextQuestion()"><i class="fa-solid fa-arrow-right"></i> 下一題</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 側邊欄 (QR Code 與 同學清單) -->
+        <div class="side-panel">
+          <div class="qr-card" onclick="openBigQR()">
+            <div style="font-weight: 900; font-size: 16px; color: var(--color-dark);">掃描加入測驗</div>
+            <div id="qrcode-box"></div>
+            <div class="qr-hint"><i class="fa-solid fa-expand"></i> 點擊放大 QR Code 投影</div>
+          </div>
+
+          <div class="students-card">
+            <div class="panel-title">
+              <span>在線同學清單</span>
+              <span id="students-badge" class="student-badge">0 人</span>
+            </div>
+            <div class="student-list" id="student-list-box">
+              <div style="text-align: center; color: var(--text-muted); font-size: 13px; margin-top: 30px;">
+                等待同學掃碼加入...
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 學生端作答視圖 (Student Client) -->
+    <div id="student-view">
+      
+      <!-- 模式 1 / 3 答題按鈕 -->
+      <div id="student-choice-box" style="display:none; flex-direction:column; gap:16px;">
+        <div style="text-align:center; font-size: 20px; font-weight:900; color:var(--color-dark);" id="student-q-title">請看大螢幕選答</div>
+        <div class="student-options">
+          <button class="student-opt-btn s-opt-a" onclick="submitStudentChoice('A')">A</button>
+          <button class="student-opt-btn s-opt-b" onclick="submitStudentChoice('B')">B</button>
+          <button class="student-opt-btn s-opt-c" onclick="submitStudentChoice('C')">C</button>
+          <button class="student-opt-btn s-opt-d" onclick="submitStudentChoice('D')">D</button>
+        </div>
+        <div style="text-align:center; font-size: 15px; font-weight:700; color:var(--text-muted);" id="student-vote-hint">點選後可隨時更換</div>
+      </div>
+
+      <!-- 模式 2 巨大搶答器按鈕 -->
+      <div id="student-buzzer-box" style="display:none; flex-direction:column; align-items:center;">
+        <div style="font-size: 20px; font-weight:900; margin-bottom: 10px;" id="student-buzzer-status">等待老師開始...</div>
+        <button class="giant-buzzer-btn disabled" id="student-giant-buzzer" onclick="pressStudentBuzzer()">
+          <i class="fa-solid fa-hand-pointer"></i>
+          <span>搶答</span>
+        </button>
+      </div>
+
+      <!-- 模式 4 自主闖關 -->
+      <div id="student-self-box" style="display:none; flex-direction:column; gap:16px;">
+        <div style="background:white; border-radius:20px; padding:24px; box-shadow:var(--shadow-sm); border:1px solid #EFEAE3;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:12px;">
+            <span style="font-weight:900; color:var(--color-primary);" id="student-self-qnum">第 1 / 5 題</span>
+            <span style="font-weight:900; color:#2E7D32;" id="student-self-score">得分：0</span>
+          </div>
+          <div style="font-size: 20px; font-weight:900; margin-bottom: 20px;" id="student-self-qtext">題目載入中...</div>
+          <div id="student-self-options" style="display:flex; flex-direction:column; gap:10px;"></div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- 題庫管理燈箱 (Modal) -->
+  <div class="modal-overlay" id="bank-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">📚 題庫管理與智慧貼上</div>
+        <button class="btn btn-outline" onclick="closeBankModal()"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <div style="font-size: 14px; color: var(--text-muted);">
+          直接將考卷文字貼在下方，系統會自動辨識題號、題目主幹、A/B/C/D 選項與答案（如：答案：B）：
+        </div>
+        <textarea class="raw-textarea" id="paste-text-input" placeholder="1. 台灣最高峰是哪一座山？
+(A) 玉山 (B) 雪山 (C) 陽明山 (D) 阿里山
+答案：A
+解析：玉山主峰海拔3952公尺，為台灣第一高峰。
+
+2. 光合作用需要的主要氣體是？
+A. 氧氣
+B. 二氧化碳
+C. 氮氣
+D. 氫氣
+答案：B"></textarea>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          <button class="btn btn-primary" onclick="applyPastedQuiz()"><i class="fa-solid fa-wand-magic-sparkles"></i> 智能辨識並載入題庫</button>
+          <button class="btn btn-secondary" onclick="loadSampleQuiz(1)">載入自然科學範例</button>
+          <button class="btn btn-secondary" onclick="loadSampleQuiz(2)">載入成語趣味範例</button>
+          <button class="btn btn-outline" onclick="exportQuizJSON()"><i class="fa-solid fa-download"></i> 匯出 JSON</button>
+          <button class="btn btn-outline" onclick="document.getElementById('import-file').click()"><i class="fa-solid fa-upload"></i> 匯入題庫檔</button>
+          <input type="file" id="import-file" style="display:none;" accept=".json,.csv" onchange="importQuizFile(this)">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- QR Code 巨大全螢幕放大燈箱 -->
+  <div class="modal-overlay" id="big-qr-modal" onclick="closeBigQR()">
+    <div style="background:white; border-radius: 28px; padding: 40px; text-align: center; box-shadow: var(--shadow-lg);" onclick="event.stopPropagation()">
+      <h2 style="font-size: 28px; font-weight: 900; margin-bottom: 12px; color: var(--color-dark);">掃描加入「Puti-AI 搶答器」</h2>
+      <div style="font-size: 20px; font-weight: 700; color: var(--color-primary); margin-bottom: 20px;">房間代碼 PIN：<span id="big-pin"></span></div>
+      <div id="big-qrcode-box" style="display: flex; justify-content: center; margin-bottom: 20px;"></div>
+      <button class="btn btn-primary" style="font-size: 18px; padding: 12px 32px;" onclick="closeBigQR()">關閉燈箱</button>
+    </div>
+  </div>
+
+  <!-- 幸運抽籤輪盤燈箱 -->
+  <div class="modal-overlay" id="wheel-modal">
+    <div class="modal-card" style="max-width: 440px; text-align: center;">
+      <div class="modal-header">
+        <div class="modal-title">🎲 課堂幸運抽籤機</div>
+        <button class="btn btn-outline" onclick="closeWheelModal()"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" style="align-items: center;">
+        <canvas id="wheel-canvas" width="280" height="280"></canvas>
+        <div style="font-size: 28px; font-weight: 900; color: var(--color-primary); min-height: 42px;" id="wheel-winner-text">等待轉盤...</div>
+        <button class="btn btn-primary" style="font-size: 18px; padding: 12px 36px; margin-top: 10px;" onclick="spinWheel()">
+          <i class="fa-solid fa-rotate-right"></i> 抽一位同學！
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 頁尾版權宣告 (強制規則) -->
+  <footer>
+    屏東縣後庄國小黃朝榮老師作品，免費分享，歡迎擴散推廣，嚴禁商用與任何侵權、不尊重著作權的行為，更多 Puti-AI 教學工具 <a href="https://padlet.com/clongwh/puti_ai_tools" target="_blank" rel="noopener">點此前往</a>
+  </footer>
+
+  <script>
+    /* ============================================================
+       1. 音效引擎 (Web Audio API 合成，免載外連 mp3，零失敗率)
+       ============================================================ */
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playTone(freq, type = 'sine', duration = 0.15, gainVal = 0.2) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      gain.gain.setValueAtTime(gainVal, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    }
+
+    const soundEffects = {
+      buzz: () => { // 搶答蜂鳴
+        playTone(320, 'sawtooth', 0.25, 0.4);
+        setTimeout(() => playTone(480, 'square', 0.2, 0.3), 80);
+      },
+      countdown: () => playTone(600, 'sine', 0.08, 0.2), // 逼逼
+      correct: () => { // 叮咚
+        playTone(523.25, 'sine', 0.2, 0.3); // C5
+        setTimeout(() => playTone(659.25, 'sine', 0.3, 0.3), 120); // E5
+        setTimeout(() => playTone(783.99, 'sine', 0.4, 0.3), 240); // G5
+      },
+      wrong: () => { // 答錯低音
+        playTone(220, 'triangle', 0.3, 0.3);
+        setTimeout(() => playTone(180, 'triangle', 0.4, 0.3), 150);
+      },
+      celebrate: () => {
+        confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
+        soundEffects.correct();
+      }
+    };
+
+    /* ============================================================
+       2. 題庫管理與智慧貼上辨識 (Smart Parser)
+       ============================================================ */
+    const sampleBanks = {
+      1: [
+        {
+          id: 'q1',
+          question: '台灣第一高峰是哪一座山脈？',
+          options: [{key:'A', text:'雪山'}, {key:'B', text:'玉山'}, {key:'C', text:'大霸尖山'}, {key:'D', text:'阿里山'}],
+          answer: 'B',
+          explanation: '玉山主峰海拔高達 3,952 公尺，不僅是台灣最高峰，也是東北亞第一高峰。'
+        },
+        {
+          id: 'q2',
+          question: '植物在行光合作用時，主要吸收哪種氣體並釋放氧氣？',
+          options: [{key:'A', text:'氮氣'}, {key:'B', text:'二氧化碳'}, {key:'C', text:'一氧化碳'}, {key:'D', text:'氦氣'}],
+          answer: 'B',
+          explanation: '綠色植物吸收二氧化碳與水分，藉由葉綠體與陽光轉化為葡萄糖與氧氣。'
+        },
+        {
+          id: 'q3',
+          question: '水在常溫常壓下的沸點是攝氏幾度？',
+          options: [{key:'A', text:'50°C'}, {key:'B', text:'80°C'}, {key:'C', text:'100°C'}, {key:'D', text:'120°C'}],
+          answer: 'C',
+          explanation: '在大氣壓力 1 atm 下，純水的沸點為 100°C。'
+        },
+        {
+          id: 'q4',
+          question: '太陽系中體積最大的行星是哪一顆？',
+          options: [{key:'A', text:'地球'}, {key:'B', text:'火星'}, {key:'C', text:'木星'}, {key:'D', text:'土星'}],
+          answer: 'C',
+          explanation: '木星是太陽系八大行星中體積與質量最大的氣態巨行星。'
+        },
+        {
+          id: 'q5',
+          question: '下列何者屬於可再生能源？',
+          options: [{key:'A', text:'太陽能'}, {key:'B', text:'煤炭'}, {key:'C', text:'石油'}, {key:'D', text:'天然氣'}],
+          answer: 'A',
+          explanation: '太陽能、風力、水力屬於大自然生生不息的可再生能源。'
+        }
+      ],
+      2: [
+        {
+          id: 'q1',
+          question: '比喻看事情非常淺短，只看到表面，就像坐在井底看天一樣，是哪一個成語？',
+          options: [{key:'A', text:'井底之蛙'}, {key:'B', text:'畫蛇添足'}, {key:'C', text:'狐假虎威'}, {key:'D', text:'守株待兔'}],
+          answer: 'A',
+          explanation: '「井底之蛙」語出《莊子》，形容人見識狹隘、目光短淺。'
+        },
+        {
+          id: 'q2',
+          question: '「班門弄斧」這句成語的典故中，「班」指的是哪一位古代巧匠？',
+          options: [{key:'A', text:'魯班'}, {key:'B', text:'班超'}, {key:'C', text:'班固'}, {key:'D', text:'墨子'}],
+          answer: 'A',
+          explanation: '魯班是春秋時期的著名能工巧匠，在魯班門前擺弄斧頭比喻在行家面前賣弄本領。'
+        }
+      ]
+    };
+
+    let quizBank = JSON.parse(localStorage.getItem('puti_buzzer_quiz') || 'null') || sampleBanks[1];
+    let currentQIndex = 0;
+    let currentMode = 'normal'; // normal | buzzer | speed | self
+    let isRevealed = false;
+    let votes = { A: 0, B: 0, C: 0, D: 0 };
+    let students = {}; // peerId -> { name, score, currentQ, buzzerTime }
+
+    function parsePastedText(raw) {
+      const questions = [];
+      const blocks = raw.split(/\n\s*(?=(?:[0-9]{1,3}[\.、\s]|第[0-9]+題))/g);
+
+      for (const block of blocks) {
+        if (!block.trim()) continue;
+        const lines = block.trim().split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length === 0) continue;
+
+        let questionText = lines[0].replace(/^(?:[0-9]{1,3}[\.、\s]|第[0-9]+題[:：]?)\s*/, '');
+        let options = [];
+        let answer = 'A';
+        let explanation = '';
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i];
+          const ansMatch = line.match(/(?:答案|Ans|KEY)[:：\s]*([A-Da-d1-4])/i);
+          if (ansMatch) {
+            const val = ansMatch[1].toUpperCase();
+            answer = ({'1':'A','2':'B','3':'C','4':'D'})[val] || val;
+            continue;
+          }
+          const expMatch = line.match(/^(?:解析|說明|Note)[:：]\s*(.*)/i);
+          if (expMatch) {
+            explanation = expMatch[1];
+            continue;
+          }
+
+          // 選項匹配
+          const optMatches = [...line.matchAll(/(?:\(([A-D1-4])\)|([A-D1-4])[\.、\s])\s*([^\(A-D1-4]+)/gi)];
+          if (optMatches.length > 0) {
+            optMatches.forEach(m => {
+              let k = (m[1] || m[2]).toUpperCase();
+              k = ({'1':'A','2':'B','3':'C','4':'D'})[k] || k;
+              options.push({ key: k, text: m[3].trim() });
+            });
+          } else if (line.match(/^[A-D1-4][\.、\s]/)) {
+            let k = line[0].toUpperCase();
+            k = ({'1':'A','2':'B','3':'C','4':'D'})[k] || k;
+            options.push({ key: k, text: line.substring(2).trim() });
+          } else {
+            questionText += ' ' + line;
+          }
+        }
+
+        if (options.length >= 2) {
+          questions.push({
+            id: 'q_' + (questions.length + 1),
+            question: questionText,
+            options,
+            answer,
+            explanation
+          });
+        }
+      }
+      return questions;
+    }
+
+    /* ============================================================
+       3. 角色判定與 P2P 通訊 (PeerJS WebRTC 零延遲)
+       ============================================================ */
+    const urlParams = new URLSearchParams(window.location.search);
+    const roleParam = urlParams.get('role');
+    const roomParam = urlParams.get('room');
+    const isStudent = (roleParam === 'player' || (roomParam && roleParam !== 'host'));
+
+    let peer = null;
+    let hostConn = null; // 學生連老師
+    let studentConns = {}; // 老師連各學生
+    let myRoomId = roomParam || '';
+
+    if (!isStudent) {
+      // 老師端 (Host)
+      initTeacherHost();
+    } else {
+      // 學生端 (Player)
+      initStudentClient();
+    }
+
+    function initTeacherHost() {
+      document.getElementById('host-view').style.display = 'flex';
+      document.getElementById('student-view').style.display = 'none';
+      document.getElementById('host-header-actions').style.display = 'flex';
+      document.getElementById('student-header-actions').style.display = 'none';
+
+      // 產生 4 碼隨機房號
+      const randomPin = Math.floor(1000 + Math.random() * 9000);
+      myRoomId = 'PUTI-' + randomPin;
+      document.getElementById('room-pin').textContent = myRoomId;
+      document.getElementById('big-pin').textContent = myRoomId;
+
+      peer = new Peer(myRoomId);
+
+      peer.on('open', (id) => {
+        generateQRCodes();
+        renderQuestion();
+      });
+
+      peer.on('connection', (conn) => {
+        conn.on('open', () => {
+          studentConns[conn.peer] = conn;
+        });
+
+        conn.on('data', (data) => {
+          handleTeacherReceivedData(conn.peer, data);
+        });
+
+        conn.on('close', () => {
+          delete studentConns[conn.peer];
+          delete students[conn.peer];
+          updateStudentListUI();
+        });
+      });
+    }
+
+    function generateQRCodes() {
+      const studentJoinUrl = window.location.origin + window.location.pathname + '?room=' + myRoomId + '&role=player';
+      
+      document.getElementById('qrcode-box').innerHTML = '';
+      new QRCode(document.getElementById('qrcode-box'), {
+        text: studentJoinUrl,
+        width: 130,
+        height: 130,
+        colorDark: "#2D2724",
+        colorLight: "#FFFFFF",
+        correctLevel: QRCode.CorrectLevel.M
+      });
+
+      document.getElementById('big-qrcode-box').innerHTML = '';
+      new QRCode(document.getElementById('big-qrcode-box'), {
+        text: studentJoinUrl,
+        width: 260,
+        height: 260,
+        colorDark: "#2D2724",
+        colorLight: "#FFFFFF",
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    }
+
+    function broadcast(data) {
+      Object.values(studentConns).forEach(conn => {
+        if (conn.open) conn.send(data);
+      });
+    }
+
+    let buzzerLocked = false;
+    let buzzerRoundWinner = null;
+
+    function handleTeacherReceivedData(peerId, data) {
+      if (data.type === 'JOIN') {
+        students[peerId] = {
+          name: data.name || '同學',
+          score: 0,
+          currentQ: 1,
+          choice: null
+        };
+        updateStudentListUI();
+        // 同步當前題目與模式給該學生
+        if (studentConns[peerId]) {
+          studentConns[peerId].send({
+            type: 'SYNC_STATE',
+            mode: currentMode,
+            qIndex: currentQIndex,
+            question: quizBank[currentQIndex],
+            quizLength: quizBank.length,
+            buzzerLocked
+          });
+        }
+      }
+      else if (data.type === 'SUBMIT_CHOICE') {
+        if (students[peerId]) {
+          const oldChoice = students[peerId].choice;
+          if (oldChoice) votes[oldChoice] = Math.max(0, votes[oldChoice] - 1);
+          students[peerId].choice = data.choice;
+          votes[data.choice] = (votes[data.choice] || 0) + 1;
+          renderVotesBar();
+          soundEffects.countdown();
+        }
+      }
+      else if (data.type === 'BUZZ') {
+        if (!buzzerLocked && currentMode === 'buzzer') {
+          buzzerLocked = true;
+          buzzerRoundWinner = { peerId, name: students[peerId]?.name || '同學', timeDiff: (data.timeDiff / 1000).toFixed(2) };
+          soundEffects.buzz();
+          broadcast({ type: 'BUZZER_WINNER', winner: buzzerRoundWinner.name });
+          renderBuzzerWinner(buzzerRoundWinner);
+        }
+      }
+      else if (data.type === 'SELF_PROGRESS') {
+        if (students[peerId]) {
+          students[peerId].currentQ = data.currentQ;
+          students[peerId].score = data.score;
+          renderSelfProgressUI();
+        }
+      }
+    }
+
+    /* ============================================================
+       4. 學生端邏輯 (Player Client)
+       ============================================================ */
+    let myName = localStorage.getItem('puti_student_name') || '';
+    let buzzStartTime = 0;
+    let selfAnswers = {};
+    let selfScore = 0;
+
+    function initStudentClient() {
+      document.getElementById('host-view').style.display = 'none';
+      document.getElementById('student-view').style.display = 'flex';
+      document.getElementById('host-header-actions').style.display = 'none';
+      document.getElementById('student-header-actions').style.display = 'flex';
+
+      if (!myName) {
+        myName = prompt('請輸入你的座號或姓名：') || ('同學' + Math.floor(Math.random()*100));
+        localStorage.setItem('puti_student_name', myName);
+      }
+      document.getElementById('my-display-name').textContent = myName;
+
+      peer = new Peer();
+      peer.on('open', (id) => {
+        connectToTeacher();
+      });
+    }
+
+    function connectToTeacher() {
+      hostConn = peer.connect(myRoomId);
+      hostConn.on('open', () => {
+        hostConn.send({ type: 'JOIN', name: myName });
+      });
+
+      hostConn.on('data', (data) => {
+        if (data.type === 'SYNC_STATE' || data.type === 'CHANGE_MODE') {
+          syncStudentMode(data.mode, data.question, data.qIndex, data.quizLength, data.buzzerLocked);
+        }
+        else if (data.type === 'BUZZER_UNLOCK') {
+          buzzStartTime = performance.now();
+          const btn = document.getElementById('student-giant-buzzer');
+          btn.classList.remove('disabled', 'buzzed');
+          document.getElementById('student-buzzer-status').textContent = '🔥 搶！按下按鈕！';
+          navigator.vibrate?.(100);
+        }
+        else if (data.type === 'BUZZER_WINNER') {
+          const btn = document.getElementById('student-giant-buzzer');
+          btn.classList.add('disabled');
+          if (data.winner === myName) {
+            btn.classList.add('buzzed');
+            document.getElementById('student-buzzer-status').textContent = '🎉 你搶到了第一名！請作答！';
+            soundEffects.correct();
+          } else {
+            document.getElementById('student-buzzer-status').textContent = `已被 ${data.winner} 搶先！`;
+          }
+        }
+        else if (data.type === 'REVEAL_ANSWER') {
+          // 揭曉答案
+        }
+      });
+    }
+
+    function syncStudentMode(mode, qData, qIdx, length, bLocked) {
+      document.getElementById('student-choice-box').style.display = 'none';
+      document.getElementById('student-buzzer-box').style.display = 'none';
+      document.getElementById('student-self-box').style.display = 'none';
+
+      // 移除選中的樣式
+      document.querySelectorAll('.student-opt-btn').forEach(b => b.classList.remove('selected'));
+
+      if (mode === 'normal' || mode === 'speed') {
+        document.getElementById('student-choice-box').style.display = 'flex';
+        document.getElementById('student-q-title').textContent = (qIdx + 1) + '. ' + (qData?.question || '請看大螢幕選答');
+      } else if (mode === 'buzzer') {
+        document.getElementById('student-buzzer-box').style.display = 'flex';
+        const btn = document.getElementById('student-giant-buzzer');
+        if (bLocked) {
+          btn.classList.add('disabled');
+          document.getElementById('student-buzzer-status').textContent = '等待老師倒數...';
+        }
+      } else if (mode === 'self') {
+        document.getElementById('student-self-box').style.display = 'flex';
+        renderStudentSelfQuiz();
+      }
+    }
+
+    function submitStudentChoice(choice) {
+      soundEffects.countdown();
+      document.querySelectorAll('.student-opt-btn').forEach(b => b.classList.remove('selected'));
+      event.target.classList.add('selected');
+      navigator.vibrate?.(40);
+      if (hostConn?.open) {
+        hostConn.send({ type: 'SUBMIT_CHOICE', choice });
+      }
+    }
+
+    function pressStudentBuzzer() {
+      const btn = document.getElementById('student-giant-buzzer');
+      if (btn.classList.contains('disabled')) return;
+      
+      const timeDiff = performance.now() - buzzStartTime;
+      navigator.vibrate?.([60, 40, 60]);
+      btn.classList.add('disabled');
+      if (hostConn?.open) {
+        hostConn.send({ type: 'BUZZ', timeDiff });
+      }
+    }
+
+    function renderStudentSelfQuiz() {
+      let q = quizBank[currentQIndex];
+      if (!q) return;
+      document.getElementById('student-self-qnum').textContent = `第 ${currentQIndex + 1} / ${quizBank.length} 題`;
+      document.getElementById('student-self-score').textContent = `得分：${selfScore}`;
+      document.getElementById('student-self-qtext').textContent = q.question;
+
+      const optContainer = document.getElementById('student-self-options');
+      optContainer.innerHTML = '';
+
+      q.options.forEach(opt => {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-outline';
+        btn.style.cssText = 'padding:14px; font-size:17px; justify-content:flex-start; text-align:left;';
+        btn.innerHTML = `<span style="width:28px; height:28px; background:#E2DCD5; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; margin-right:8px; font-weight:900;">${opt.key}</span> ${opt.text}`;
+        
+        btn.onclick = () => {
+          if (opt.key === q.answer) {
+            soundEffects.correct();
+            btn.style.background = '#E8F5E9';
+            btn.style.borderColor = '#2E7D32';
+            selfScore += 20;
+          } else {
+            soundEffects.wrong();
+            btn.style.background = '#FFEBEE';
+            btn.style.borderColor = '#C62828';
+          }
+          optContainer.querySelectorAll('button').forEach(b => b.disabled = true);
+          setTimeout(() => {
+            if (currentQIndex < quizBank.length - 1) {
+              currentQIndex++;
+              renderStudentSelfQuiz();
+              hostConn?.send({ type: 'SELF_PROGRESS', currentQ: currentQIndex + 1, score: selfScore });
+            } else {
+              soundEffects.celebrate();
+              optContainer.innerHTML = `<div style="text-align:center; padding:20px; font-size:20px; font-weight:900; color:#2E7D32;">🎉 恭喜完成全部測驗！總得分：${selfScore} 分</div>`;
+              hostConn?.send({ type: 'SELF_PROGRESS', currentQ: quizBank.length, score: selfScore });
+            }
+          }, 1200);
+        };
+        optContainer.appendChild(btn);
+      });
+    }
+
+    /* ============================================================
+       5. 老師端渲染與互動控制 (Host Controllers)
+       ============================================================ */
+    function renderQuestion() {
+      const q = quizBank[currentQIndex];
+      if (!q) return;
+
+      isRevealed = false;
+      votes = { A: 0, B: 0, C: 0, D: 0 };
+      buzzerLocked = false;
+      buzzerRoundWinner = null;
+
+      document.getElementById('q-index-tag').textContent = `第 ${currentQIndex + 1} / ${quizBank.length} 題`;
+      document.getElementById('q-title-text').textContent = q.question;
+      document.getElementById('explanation-box').style.display = 'none';
+      document.getElementById('explanation-text').textContent = q.explanation || '暫無解析';
+
+      // 搶答 winner 隱藏
+      document.getElementById('buzzer-winner-card').classList.remove('show');
+      document.getElementById('buzzer-status-label').textContent = '等待老師啟動搶答...';
+      document.getElementById('start-buzz-btn').style.display = 'inline-flex';
+
+      // 選項文字
+      ['A', 'B', 'C', 'D'].forEach((key, idx) => {
+        const opt = q.options.find(o => o.key === key) || q.options[idx];
+        const box = document.getElementById(`opt-box-${key}`);
+        if (opt) {
+          box.style.display = 'flex';
+          box.classList.remove('is-correct');
+          document.getElementById(`opt-text-${key}`).textContent = opt.text;
+        } else {
+          box.style.display = 'none';
+        }
+      });
+
+      renderVotesBar();
+      renderPagination();
+
+      // 廣播給學生
+      broadcast({
+        type: 'SYNC_STATE',
+        mode: currentMode,
+        qIndex: currentQIndex,
+        question: q,
+        quizLength: quizBank.length,
+        buzzerLocked
+      });
+    }
+
+    function renderVotesBar() {
+      const total = Object.values(votes).reduce((a, b) => a + b, 0) || 1;
+      ['A', 'B', 'C', 'D'].forEach(key => {
+        const count = votes[key] || 0;
+        const pct = Math.round((count / total) * 100);
+        document.getElementById(`opt-bar-${key}`).style.width = `${pct}%`;
+        document.getElementById(`opt-count-${key}`).textContent = `${count} 票 (${pct}%)`;
+      });
+    }
+
+    function renderPagination() {
+      const bar = document.getElementById('q-pagination-bar');
+      bar.innerHTML = '';
+      quizBank.forEach((_, idx) => {
+        const btn = document.createElement('button');
+        btn.className = 'q-page-btn' + (idx === currentQIndex ? ' active' : '');
+        btn.textContent = idx + 1;
+        btn.onclick = () => {
+          currentQIndex = idx;
+          renderQuestion();
+        };
+        bar.appendChild(btn);
+      });
+    }
+
+    function switchMode(mode) {
+      currentMode = mode;
+      document.querySelectorAll('.mode-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.mode === mode);
+      });
+
+      document.getElementById('choice-stage').style.display = (mode === 'normal' || mode === 'speed') ? 'block' : 'none';
+      document.getElementById('buzzer-stage').style.display = (mode === 'buzzer') ? 'flex' : 'none';
+      document.getElementById('self-stage').style.display = (mode === 'self') ? 'flex' : 'none';
+
+      if (mode === 'self') renderSelfProgressUI();
+
+      broadcast({
+        type: 'CHANGE_MODE',
+        mode: currentMode,
+        qIndex: currentQIndex,
+        question: quizBank[currentQIndex],
+        quizLength: quizBank.length,
+        buzzerLocked: (mode === 'buzzer')
+      });
+    }
+
+    function nextQuestion() {
+      if (currentQIndex < quizBank.length - 1) {
+        currentQIndex++;
+        renderQuestion();
+      } else {
+        alert('已經是最後一題囉！');
+      }
+    }
+
+    function toggleReveal() {
+      isRevealed = !isRevealed;
+      const q = quizBank[currentQIndex];
+      const correctBox = document.getElementById(`opt-box-${q.answer}`);
+      if (isRevealed) {
+        correctBox?.classList.add('is-correct');
+        document.getElementById('explanation-box').style.display = 'block';
+        soundEffects.celebrate();
+      } else {
+        correctBox?.classList.remove('is-correct');
+        document.getElementById('explanation-box').style.display = 'none';
+      }
+    }
+
+    function manualCheck(key) {
+      const q = quizBank[currentQIndex];
+      if (key === q.answer) {
+        toggleReveal();
+      } else {
+        soundEffects.wrong();
+      }
+    }
+
+    function startBuzzerRound() {
+      buzzerLocked = false;
+      buzzerRoundWinner = null;
+      document.getElementById('buzzer-winner-card').classList.remove('show');
+      document.getElementById('start-buzz-btn').style.display = 'none';
+
+      let count = 3;
+      document.getElementById('buzzer-status-label').textContent = `準備... ${count}`;
+      soundEffects.countdown();
+
+      const timer = setInterval(() => {
+        count--;
+        if (count > 0) {
+          document.getElementById('buzzer-status-label').textContent = `準備... ${count}`;
+          soundEffects.countdown();
+        } else {
+          clearInterval(timer);
+          document.getElementById('buzzer-status-label').textContent = '🔥 搶！按下按鈕！';
+          soundEffects.buzz();
+          broadcast({ type: 'BUZZER_UNLOCK' });
+        }
+      }, 1000);
+    }
+
+    function renderBuzzerWinner(winner) {
+      document.getElementById('buzzer-status-label').textContent = '搶答結束！';
+      document.getElementById('buzzer-winner-name').textContent = winner.name;
+      document.getElementById('buzzer-winner-time').textContent = `反應速度：+${winner.timeDiff} 秒`;
+      document.getElementById('buzzer-winner-card').classList.add('show');
+      document.getElementById('start-buzz-btn').style.display = 'inline-flex';
+    }
+
+    function awardBuzzerScore(isRight) {
+      if (!buzzerRoundWinner) return;
+      if (isRight) {
+        soundEffects.celebrate();
+        if (students[buzzerRoundWinner.peerId]) {
+          students[buzzerRoundWinner.peerId].score = (students[buzzerRoundWinner.peerId].score || 0) + 10;
+        }
+        alert(`🏆 已為 ${buzzerRoundWinner.name} 加 10 分！`);
+      } else {
+        soundEffects.wrong();
+        alert(`❌ 答錯了！換下一位或重新搶答！`);
+      }
+      updateStudentListUI();
+    }
+
+    function updateStudentListUI() {
+      const list = document.getElementById('student-list-box');
+      const count = Object.keys(students).length;
+      document.getElementById('online-count').textContent = count;
+      document.getElementById('students-badge').textContent = `${count} 人`;
+
+      if (count === 0) {
+        list.innerHTML = `<div style="text-align:center; color:var(--text-muted); font-size:13px; margin-top:30px;">等待同學掃碼加入...</div>`;
+        return;
+      }
+
+      list.innerHTML = '';
+      Object.values(students).forEach(s => {
+        const item = document.createElement('div');
+        item.className = 'student-item';
+        item.innerHTML = `<span><i class="fa-solid fa-user-graduate" style="color:var(--color-primary); margin-right:6px;"></i> ${s.name}</span> <span class="student-badge">${s.score} 分</span>`;
+        list.appendChild(item);
+      });
+    }
+
+    function renderSelfProgressUI() {
+      const box = document.getElementById('self-progress-list');
+      box.innerHTML = '';
+      const list = Object.values(students);
+      if (list.length === 0) {
+        box.innerHTML = `<div style="color:var(--text-muted); padding:20px;">尚無同學進度數據</div>`;
+        return;
+      }
+      list.forEach(s => {
+        const card = document.createElement('div');
+        card.style.cssText = 'background:#F9F6F0; border-radius:14px; padding:14px; border:1px solid #E2DCD5; display:flex; flex-direction:column; gap:6px;';
+        const pct = Math.round((s.currentQ / quizBank.length) * 100);
+        card.innerHTML = `
+          <div style="display:flex; justify-content:space-between; font-weight:900;">
+            <span>${s.name}</span>
+            <span style="color:#2E7D32;">${s.score} 分</span>
+          </div>
+          <div style="font-size:12px; color:var(--text-muted);">進度：第 ${s.currentQ} / ${quizBank.length} 題 (${pct}%)</div>
+          <div style="width:100%; height:8px; background:#E2DCD5; border-radius:999px; overflow:hidden;">
+            <div style="width:${pct}%; height:100%; background:var(--color-secondary); transition:width 0.3s;"></div>
+          </div>
+        `;
+        box.appendChild(card);
+      });
+    }
+
+    /* ============================================================
+       6. 輔助功能 (語音朗讀、抽籤輪盤、CSV 匯出、燈箱)
+       ============================================================ */
+    function speakQuestion() {
+      if (!('speechSynthesis' in window)) {
+        alert('您的瀏覽器不支援語音合成朗讀');
+        return;
+      }
+      const q = quizBank[currentQIndex];
+      const optStr = q.options.map(o => `${o.key}, ${o.text}`).join('。 ');
+      const utterance = new SpeechSynthesisUtterance(`${q.question}。 選項：${optStr}`);
+      utterance.lang = 'zh-TW';
+      utterance.rate = 1.0;
+      window.speechSynthesis.speak(utterance);
+    }
+
+    let countdownTimer = null;
+    function toggleTimer() {
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+        document.getElementById('timer-btn').innerHTML = `<i class="fa-regular fa-clock"></i> 倒數 15s`;
+        return;
+      }
+      let sec = 15;
+      document.getElementById('timer-btn').innerHTML = `<i class="fa-solid fa-hourglass-half"></i> 剩餘 ${sec}s`;
+      soundEffects.countdown();
+      countdownTimer = setInterval(() => {
+        sec--;
+        if (sec > 0) {
+          document.getElementById('timer-btn').innerHTML = `<i class="fa-solid fa-hourglass-half"></i> 剩餘 ${sec}s`;
+          if (sec <= 3) soundEffects.countdown();
+        } else {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+          document.getElementById('timer-btn').innerHTML = `<i class="fa-regular fa-clock"></i> 時間到！`;
+          soundEffects.wrong();
+        }
+      }, 1000);
+    }
+
+    function exportResultsCSV() {
+      let csvContent = "\uFEFF座號姓名,當前題號,測驗得分\n";
+      Object.values(students).forEach(s => {
+        csvContent += `"${s.name}",${s.currentQ},${s.score}\n`;
+      });
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Puti-AI_課堂測驗成果_${new Date().toISOString().slice(0,10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // 題庫管理燈箱
+    function openBankModal() { document.getElementById('bank-modal').style.display = 'flex'; }
+    function closeBankModal() { document.getElementById('bank-modal').style.display = 'none'; }
+    
+    function applyPastedQuiz() {
+      const text = document.getElementById('paste-text-input').value;
+      if (!text.trim()) { alert('請先貼上題目內容'); return; }
+      const parsed = parsePastedText(text);
+      if (parsed.length === 0) {
+        alert('無法辨識題目，請確認包含題號與選項格式（如 1. 題目 (A) ... 答案：A）');
+        return;
+      }
+      quizBank = parsed;
+      currentQIndex = 0;
+      localStorage.setItem('puti_buzzer_quiz', JSON.stringify(quizBank));
+      renderQuestion();
+      closeBankModal();
+      alert(`🎉 成功辨識並匯入 ${parsed.length} 道題目！`);
+    }
+
+    function loadSampleQuiz(id) {
+      quizBank = sampleBanks[id] || sampleBanks[1];
+      currentQIndex = 0;
+      localStorage.setItem('puti_buzzer_quiz', JSON.stringify(quizBank));
+      renderQuestion();
+      closeBankModal();
+      alert('範例題庫載入成功！');
+    }
+
+    function exportQuizJSON() {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(quizBank, null, 2));
+      const a = document.createElement('a');
+      a.setAttribute("href", dataStr);
+      a.setAttribute("download", "puti_quiz_bank.json");
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    function importQuizFile(input) {
+      const file = input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const json = JSON.parse(e.target.result);
+          if (Array.isArray(json)) {
+            quizBank = json;
+            currentQIndex = 0;
+            renderQuestion();
+            closeBankModal();
+            alert(`成功載入 ${json.length} 題題庫！`);
+          }
+        } catch(err) {
+          alert('檔案格式錯誤，請提供正確的 JSON 格式');
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // QR Code 燈箱
+    function openBigQR() { document.getElementById('big-qr-modal').style.display = 'flex'; }
+    function closeBigQR() { document.getElementById('big-qr-modal').style.display = 'none'; }
+
+    // 抽籤輪盤
+    function openWheelModal() {
+      document.getElementById('wheel-modal').style.display = 'flex';
+      drawWheel();
+    }
+    function closeWheelModal() { document.getElementById('wheel-modal').style.display = 'none'; }
+
+    function drawWheel() {
+      const canvas = document.getElementById('wheel-canvas');
+      const ctx = canvas.getContext('2d');
+      const names = Object.values(students).map(s => s.name);
+      if (names.length === 0) names.push('無在線同學');
+      
+      const arc = (2 * Math.PI) / names.length;
+      const colors = ['#E07A5F', '#81B29A', '#F2CC8F', '#3D405B', '#F4A261', '#2A9D8F'];
+
+      ctx.clearRect(0, 0, 280, 280);
+      names.forEach((name, i) => {
+        const angle = i * arc;
+        ctx.beginPath();
+        ctx.fillStyle = colors[i % colors.length];
+        ctx.moveTo(140, 140);
+        ctx.arc(140, 140, 130, angle, angle + arc);
+        ctx.fill();
+
+        ctx.save();
+        ctx.fillStyle = "white";
+        ctx.font = "bold 14px 'Zen Maru Gothic'";
+        ctx.translate(140, 140);
+        ctx.rotate(angle + arc / 2);
+        ctx.textAlign = "right";
+        ctx.fillText(name, 110, 5);
+        ctx.restore();
+      });
+    }
+
+    function spinWheel() {
+      const names = Object.values(students).map(s => s.name);
+      if (names.length === 0) {
+        document.getElementById('wheel-winner-text').textContent = '請先讓同學加入！';
+        return;
+      }
+      soundEffects.buzz();
+      let rollCount = 15;
+      const timer = setInterval(() => {
+        const randomName = names[Math.floor(Math.random() * names.length)];
+        document.getElementById('wheel-winner-text').textContent = randomName;
+        soundEffects.countdown();
+        rollCount--;
+        if (rollCount <= 0) {
+          clearInterval(timer);
+          soundEffects.celebrate();
+          document.getElementById('wheel-winner-text').textContent = `🎯 恭喜：${randomName}！`;
+        }
+      }, 100);
+    }
+
+    // 鍵盤快捷鍵
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (currentMode === 'buzzer') startBuzzerRound();
+        else toggleReveal();
+      } else if (e.key === 'ArrowRight') {
+        nextQuestion();
+      } else if (e.key === '1') switchMode('normal');
+      else if (e.key === '2') switchMode('buzzer');
+      else if (e.key === '3') switchMode('speed');
+      else if (e.key === '4') switchMode('self');
+    });
+  </script>
+</body>
+</html>
