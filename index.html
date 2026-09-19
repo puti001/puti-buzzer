@@ -853,6 +853,10 @@
         <span id="my-display-name" style="font-weight:900;">...</span>
         <span style="font-size:11px; color:var(--color-primary);">[改名]</span>
       </div>
+      <div class="room-badge" style="background:#E8F5E9; color:#2E7D32; font-weight:900;">
+        <i class="fa-solid fa-star" style="color:#F2CC8F;"></i>
+        <span id="my-score-display">0 分</span>
+      </div>
     </div>
   </header>
 
@@ -1141,7 +1145,10 @@ D. 氫氣
     var isJoinedConfirmed = false;
     var buzzStartTime = 0;
     var selfScore = 0;
+    var myCurrentScore = 0;
     var countdownTimer = null;
+    var hasScoredThisQuestion = false;
+    var currentStudentChoice = null;
 
     /* ============================================================
        1. 音效引擎 (Web Audio API 合成)
@@ -1658,12 +1665,47 @@ D. 氫氣
           document.getElementById('student-buzzer-status').textContent = '已被 ' + data.winnerName + ' 搶走！';
         }
       }
+      else if (data.type === 'REVEAL_ANSWER') {
+        var hint = document.getElementById('student-vote-hint');
+        if (data.scores && data.scores[myStudentId] !== undefined) {
+          myCurrentScore = data.scores[myStudentId];
+          var badge = document.getElementById('my-score-display');
+          if (badge) badge.textContent = myCurrentScore + ' 分';
+        }
+
+        if (currentStudentChoice === data.answer) {
+          soundEffects.celebrate();
+          if (hint) {
+            hint.innerHTML = '<span style="color:#2E7D32; font-size:18px; font-weight:900;">🎉 恭喜答對！+10 分！</span>';
+          }
+        } else if (currentStudentChoice) {
+          soundEffects.wrong();
+          if (hint) {
+            hint.innerHTML = '<span style="color:#D90429; font-size:18px; font-weight:900;">❌ 答錯囉！正解是 (' + data.answer + ')</span>';
+          }
+        } else {
+          if (hint) {
+            hint.innerHTML = '<span style="color:#7A726D; font-size:16px; font-weight:700;">未選答，正解是 (' + data.answer + ')</span>';
+          }
+        }
+      }
+      else if (data.type === 'UPDATE_SCORES') {
+        if (data.scores && data.scores[myStudentId] !== undefined) {
+          myCurrentScore = data.scores[myStudentId];
+          var badge = document.getElementById('my-score-display');
+          if (badge) badge.textContent = myCurrentScore + ' 分';
+        }
+      }
     }
 
     function syncStudentMode(mode, qData, qIdx, length, bLocked) {
       document.getElementById('student-choice-box').style.display = 'none';
       document.getElementById('student-buzzer-box').style.display = 'none';
       document.getElementById('student-self-box').style.display = 'none';
+
+      currentStudentChoice = null;
+      var hint = document.getElementById('student-vote-hint');
+      if (hint) hint.textContent = '點選後可隨時更換';
 
       document.querySelectorAll('.student-opt-btn').forEach(function(b) { b.classList.remove('selected'); });
 
@@ -1684,6 +1726,7 @@ D. 氫氣
     }
 
     function submitStudentChoice(choice) {
+      currentStudentChoice = choice;
       soundEffects.countdown();
       document.querySelectorAll('.student-opt-btn').forEach(function(b) { b.classList.remove('selected'); });
       if (event && event.target) event.target.classList.add('selected');
@@ -1777,9 +1820,15 @@ D. 氫氣
       if (!q) return;
 
       isRevealed = false;
+      hasScoredThisQuestion = false;
       votes = { A: 0, B: 0, C: 0, D: 0 };
       buzzerLocked = false;
       buzzerRoundWinner = null;
+
+      // 清空同學當前題目的選擇
+      Object.keys(students).forEach(function(sid) {
+        students[sid].choice = null;
+      });
 
       document.getElementById('q-index-tag').textContent = '第 ' + (currentQIndex + 1) + ' / ' + quizBank.length + ' 題';
       document.getElementById('q-title-text').textContent = q.question;
@@ -1871,6 +1920,30 @@ D. 氫氣
         if (correctBox) correctBox.classList.add('is-correct');
         document.getElementById('explanation-box').style.display = 'block';
         soundEffects.celebrate();
+
+        // 自動結算答對同學的分數 (本題只加一次)
+        if (!hasScoredThisQuestion) {
+          hasScoredThisQuestion = true;
+          Object.keys(students).forEach(function(sid) {
+            if (students[sid].choice === q.answer) {
+              students[sid].score = (students[sid].score || 0) + 10;
+            }
+          });
+          updateStudentListUI();
+        }
+
+        // 收集最新分數並廣播
+        var scoreMap = {};
+        Object.keys(students).forEach(function(sid) {
+          scoreMap[sid] = students[sid].score || 0;
+        });
+
+        broadcast({
+          type: 'REVEAL_ANSWER',
+          answer: q.answer,
+          explanation: q.explanation,
+          scores: scoreMap
+        });
       } else {
         if (correctBox) correctBox.classList.remove('is-correct');
         document.getElementById('explanation-box').style.display = 'none';
@@ -1931,6 +2004,15 @@ D. 氫氣
         alert('❌ 答錯了！換下一位或重新搶答！');
       }
       updateStudentListUI();
+
+      var scoreMap = {};
+      Object.keys(students).forEach(function(sid) {
+        scoreMap[sid] = students[sid].score || 0;
+      });
+      broadcast({
+        type: 'UPDATE_SCORES',
+        scores: scoreMap
+      });
     }
 
     function updateStudentListUI() {
