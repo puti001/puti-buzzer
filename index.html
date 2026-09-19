@@ -816,7 +816,7 @@
       <div class="brand-logo"><i class="fa-solid fa-bolt"></i></div>
       <div>
         <div class="brand-title">Puti-AI 課堂搶答器</div>
-        <div class="brand-subtitle">互動測驗 ╳ 毫秒搶答 ╳ 自主闖關</div>
+        <div class="brand-subtitle">1.共學 ╳ 2.搶答 ╳ 3.卡唬 ╳ 4.自學</div>
       </div>
     </div>
 
@@ -869,16 +869,16 @@
       <!-- 四種模式切換標籤 -->
       <div class="mode-bar">
         <button class="mode-tab active" data-mode="normal" onclick="switchMode('normal')" title="全員投票討論，無時間限制，看長條圖比例">
-          <i class="fa-solid fa-comments"></i> 1. 全員討論投票
+          <i class="fa-solid fa-comments"></i> 1. 共學
         </button>
         <button class="mode-tab" data-mode="buzzer" onclick="switchMode('buzzer')" title="手機化身發光大搶鈴，最快搶答者口頭回答">
-          <i class="fa-solid fa-stopwatch-20"></i> 2. 蜂鳴極速搶答
+          <i class="fa-solid fa-stopwatch-20"></i> 2. 搶答
         </button>
-        <button class="mode-tab" data-mode="speed" onclick="switchMode('speed')" title="限時15秒，全員ABCD選答，越快答對分數越高">
-          <i class="fa-solid fa-trophy"></i> 3. 限時競速挑戰
+        <button class="mode-tab" data-mode="speed" onclick="switchMode('speed')" title="限時秒數，全員選答，越快答對分數越高">
+          <i class="fa-solid fa-trophy"></i> 3. 卡唬
         </button>
         <button class="mode-tab" data-mode="self" onclick="switchMode('self')" title="學生在各自手機自主刷題看詳解，大螢幕為全班戰況矩陣">
-          <i class="fa-solid fa-person-walking-arrow-right"></i> 4. 自行進度闖關
+          <i class="fa-solid fa-person-walking-arrow-right"></i> 4. 自學
         </button>
       </div>
 
@@ -975,10 +975,10 @@
             <div style="background:#FDF3F0; border-radius:18px; padding:16px 20px; border:2px solid #F5CAC3; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
               <div>
                 <div style="font-size: 20px; font-weight:900; color:var(--color-primary);">
-                  <i class="fa-solid fa-person-running"></i> 自行進度闖關模式進行中
+                  <i class="fa-solid fa-person-running"></i> 4. 自學 模式進行中
                 </div>
                 <div style="font-size: 13px; color:var(--text-muted); margin-top:4px;">
-                  💡 同學正在手機/平板自主答題與看詳解；此處為全班即時進度大看板，<strong>無須老師一題一題揭曉</strong>！
+                  💡 同學正在手機/平板自學答題與看詳解；此處為全班即時進度大看板，<strong>無須老師一題一題揭曉</strong>！
                 </div>
               </div>
               <div style="display:flex; gap:10px;">
@@ -2111,7 +2111,7 @@
           });
 
           var hint = document.getElementById('student-vote-hint');
-          if (hint) hint.innerHTML = '<span style="color:#2E7D32; font-weight:900;">⚡ 計時開始！越快選對得分越高！</span>';
+          if (hint) hint.innerHTML = '<span style="color:#2E7D32; font-weight:900;">⚡ 卡唬開始！越快選對得分越高！</span>';
           try { navigator.vibrate && navigator.vibrate([60, 40, 60]); } catch(e){}
 
           var timerWrap = document.getElementById('student-timer-wrap');
@@ -2212,7 +2212,7 @@
             b.classList.remove('selected');
           });
           var hint = document.getElementById('student-vote-hint');
-          if (hint) hint.textContent = '⚡ 限時競速：越快選對得分越高！';
+          if (hint) hint.textContent = '⚡ 卡唬挑戰：越快選對得分越高！';
         }
       } else {
         if (timerWrap) timerWrap.style.display = 'none';
@@ -2417,7 +2417,7 @@
       renderPagination();
       broadcastState();
 
-      // 若處於模式 3（限時競速挑戰），切換題目時重置為「等待老師按開始」狀態
+      // 若處於模式 3（卡唬），切換題目時重置為「等待老師按開始」狀態
       isSpeedRoundStarted = false;
       if (countdownTimer) {
         clearInterval(countdownTimer);
