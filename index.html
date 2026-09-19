@@ -827,13 +827,14 @@
       </div>
       <div class="room-badge">
         <span>房間 PIN</span>
-        <span class="pin" id="room-pin">載入中...</span>
-        <button class="btn btn-outline" style="padding: 2px 8px; font-size: 12px; margin-left: 4px;" onclick="changeRoomPin()" title="產生新房號">換新房</button>
+        <span class="pin" id="room-pin" style="font-size:22px; background:white; padding:2px 10px; border-radius:8px; border:2px solid var(--color-primary);">載入中...</span>
+        <button class="btn btn-outline" style="padding: 3px 8px; font-size: 12px; margin-left: 4px;" onclick="changeRoomPin()" title="自訂或產生新房號">自訂/換房</button>
       </div>
       <div class="online-count-badge">
         <span class="online-dot"></span>
         <span id="online-count">0</span> 人在線
       </div>
+      <button class="btn btn-outline" style="color:#C62828; border-color:#FFCDD2;" onclick="resetGameScores()" title="免重新掃碼，直接將全班分數歸零重測"><i class="fa-solid fa-rotate-left"></i> 重測歸零</button>
       <button class="btn btn-outline" onclick="openBankModal()"><i class="fa-solid fa-book"></i> 題庫庫存</button>
       <button class="btn btn-outline" onclick="openWheelModal()"><i class="fa-solid fa-dice"></i> 幸運抽籤</button>
     </div>
@@ -1097,8 +1098,9 @@ D. 氫氣
   <!-- QR Code 巨大全螢幕放大燈箱 -->
   <div class="modal-overlay" id="big-qr-modal" onclick="closeBigQR()">
     <div style="background:white; border-radius: 28px; padding: 40px; text-align: center; box-shadow: var(--shadow-lg);" onclick="event.stopPropagation()">
-      <h2 style="font-size: 28px; font-weight: 900; margin-bottom: 12px; color: var(--color-dark);">掃描加入「Puti-AI 搶答器」</h2>
-      <div style="font-size: 20px; font-weight: 700; color: var(--color-primary); margin-bottom: 20px;">房間 PIN：<span id="big-pin"></span></div>
+      <div style="font-size: 26px; font-weight: 700; color: var(--color-dark); margin-bottom: 20px;">
+        房間 PIN 碼：<span id="big-pin" style="font-size:42px; font-weight:900; color:var(--color-primary); background:#FDF3F0; padding:4px 18px; border-radius:12px; border:3px solid var(--color-primary); letter-spacing:2px;"></span>
+      </div>
       <div id="big-qrcode-box" style="display: flex; justify-content: center; margin-bottom: 20px;"></div>
       <button class="btn btn-primary" style="font-size: 18px; padding: 12px 32px;" onclick="closeBigQR()">關閉燈箱</button>
     </div>
@@ -1354,7 +1356,7 @@ D. 氫氣
         savedPin = Math.floor(1000 + Math.random() * 9000).toString();
         localStorage.setItem('puti_active_pin', savedPin);
       }
-      myRoomId = 'PUTI' + savedPin;
+      myRoomId = savedPin;
 
       document.getElementById('room-pin').textContent = myRoomId;
       document.getElementById('big-pin').textContent = myRoomId;
@@ -1365,11 +1367,45 @@ D. 氫氣
     }
 
     function changeRoomPin() {
-      if (confirm('確定要產生新房號嗎？產生後學生需要重新掃描新的 QR Code！')) {
-        var newPin = Math.floor(1000 + Math.random() * 9000).toString();
+      var current = localStorage.getItem('puti_active_pin') || '';
+      var input = prompt('請輸入自訂房間 PIN 碼（例如 601 代表六年一班，或直接留空按確定隨機產生 4 碼）：', current);
+      if (input !== null) {
+        var clean = input.trim().toUpperCase();
+        var newPin = clean || Math.floor(1000 + Math.random() * 9000).toString();
         localStorage.setItem('puti_active_pin', newPin);
         location.reload();
       }
+    }
+
+    function resetGameScores() {
+      if (!confirm('確定要將全班同學的分數歸零、並從第 1 題重新開始嗎？\n（同學保持在線，完全不需重新掃碼）')) return;
+      
+      currentQIndex = 0;
+      isRevealed = false;
+      hasScoredThisQuestion = false;
+      buzzerLocked = false;
+      buzzerRoundWinner = null;
+      votes = { A: 0, B: 0, C: 0, D: 0 };
+      
+      Object.keys(students).forEach(function(sid) {
+        students[sid].score = 0;
+        students[sid].currentQ = 1;
+        students[sid].choice = null;
+      });
+      updateStudentListUI();
+      renderQuestion();
+      if (currentMode === 'self') renderSelfProgressUI();
+
+      broadcast({
+        type: 'RESET_GAME',
+        mode: currentMode,
+        qIndex: 0,
+        question: quizBank[0],
+        quizLength: quizBank.length,
+        quizBank: quizBank
+      });
+      soundEffects.celebrate();
+      alert('🎉 全班分數已歸零，重新開始測驗！同學手機已同步回到第 1 題！');
     }
 
     function connectTeacherMQTT() {
@@ -1447,6 +1483,7 @@ D. 氫氣
         qIndex: currentQIndex,
         question: quizBank[currentQIndex],
         quizLength: quizBank.length,
+        quizBank: quizBank,
         buzzerLocked: buzzerLocked
       });
     }
@@ -1472,6 +1509,7 @@ D. 氫氣
           qIndex: currentQIndex,
           question: quizBank[currentQIndex],
           quizLength: quizBank.length,
+          quizBank: quizBank,
           buzzerLocked: buzzerLocked
         });
       }
@@ -1633,6 +1671,10 @@ D. 氫氣
     }
 
     function handleStudentReceivedData(data) {
+      if (data.quizBank && Array.isArray(data.quizBank) && data.quizBank.length > 0) {
+        quizBank = data.quizBank;
+      }
+
       if (data.type === 'ACK_JOIN') {
         if (!data.targetStudentId || data.targetStudentId === myStudentId) {
           isJoinedConfirmed = true;
@@ -1647,6 +1689,23 @@ D. 氫氣
         statusEl.className = 'conn-status conn-online';
         statusEl.innerHTML = '<i class="fa-solid fa-circle-check"></i> 已加入課堂';
         syncStudentMode(data.mode, data.question, data.qIndex, data.quizLength, data.buzzerLocked);
+      }
+      else if (data.type === 'RESET_GAME') {
+        selfScore = 0;
+        myCurrentScore = 0;
+        currentQIndex = 0;
+        currentStudentChoice = null;
+        var badge = document.getElementById('my-score-display');
+        if (badge) badge.textContent = '0 分';
+        var selfScoreEl = document.getElementById('student-self-score');
+        if (selfScoreEl) selfScoreEl.textContent = '得分：0';
+        var statusEl = document.getElementById('student-conn-status');
+        if (statusEl) {
+          statusEl.className = 'conn-status conn-online';
+          statusEl.innerHTML = '<i class="fa-solid fa-circle-check"></i> 老師已重新開始測驗！';
+        }
+        soundEffects.celebrate();
+        syncStudentMode(data.mode, data.question, 0, data.quizLength || quizBank.length, data.buzzerLocked);
       }
       else if (data.type === 'BUZZER_UNLOCK') {
         buzzStartTime = performance.now();
@@ -1744,6 +1803,8 @@ D. 氫氣
         }
       } else if (mode === 'self') {
         document.getElementById('student-self-box').style.display = 'flex';
+        currentQIndex = 0;
+        selfScore = 0;
         renderStudentSelfQuiz();
       }
     }
@@ -1926,6 +1987,7 @@ D. 氫氣
         qIndex: currentQIndex,
         question: quizBank[currentQIndex],
         quizLength: quizBank.length,
+        quizBank: quizBank,
         buzzerLocked: (mode === 'buzzer')
       });
     }
@@ -2157,8 +2219,10 @@ D. 氫氣
       currentQIndex = 0;
       localStorage.setItem('puti_buzzer_quiz', JSON.stringify(quizBank));
       renderQuestion();
+      if (currentMode === 'self') renderSelfProgressUI();
+      broadcastState();
       closeBankModal();
-      alert('🎉 成功辨識並匯入 ' + parsed.length + ' 道題目！');
+      alert('🎉 成功辨識並匯入 ' + parsed.length + ' 道題目！全班手機已同步更新題庫！');
     }
 
     function loadSampleQuiz(id) {
@@ -2166,8 +2230,10 @@ D. 氫氣
       currentQIndex = 0;
       localStorage.setItem('puti_buzzer_quiz', JSON.stringify(quizBank));
       renderQuestion();
+      if (currentMode === 'self') renderSelfProgressUI();
+      broadcastState();
       closeBankModal();
-      alert('範例題庫載入成功！');
+      alert('範例題庫載入成功！全班手機已同步更新題庫！');
     }
 
     function exportQuizJSON() {
@@ -2191,8 +2257,10 @@ D. 氫氣
             quizBank = json;
             currentQIndex = 0;
             renderQuestion();
+            if (currentMode === 'self') renderSelfProgressUI();
+            broadcastState();
             closeBankModal();
-            alert('成功載入 ' + json.length + ' 題題庫！');
+            alert('成功載入 ' + json.length + ' 題題庫！全班手機已同步更新題庫！');
           }
         } catch(err) {
           alert('檔案格式錯誤，請提供正確的 JSON 格式');
